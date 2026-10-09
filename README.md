@@ -52,6 +52,8 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 
 Les menus se naviguent à la manette (croix ou stick, A valide, B revient).
 
+Les touches affichées en jeu (sort, orbe, potion, sac, consignes de la première salle) suivent le dernier appareil touché : clavier, ou manette PlayStation / Xbox / Switch avec ses vrais boutons (✕ ○ □ △, L1, R2…).
+
 ## Lancer en local
 
 Il faut [Node.js](https://nodejs.org) 18 ou plus.

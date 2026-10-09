@@ -54,6 +54,19 @@ export const DEFAULT_PAD = { bomb: 5, orb: 4, potion: 6, spell: 7, map: 8, pause
 const PAD_NAMES = ['A (Croix)', 'B (Rond)', 'X (Carré)', 'Y (Triangle)', 'L1', 'R1', 'L2', 'R2', 'Select', 'Start', 'Clic G', 'Clic D', 'Flèche ↑', 'Flèche ↓', 'Flèche ←', 'Flèche →', 'Guide'];
 export const padLabel = (i) => (i == null ? '—' : PAD_NAMES[i] || 'Bouton ' + i);
 
+// noms courts des boutons selon la manette branchée (affichés en jeu)
+const GLYPHS = {
+  ps: ['✕', '○', '□', '△', 'L1', 'R1', 'L2', 'R2', 'Create', 'Options', 'L3', 'R3', '↑', '↓', '←', '→', 'PS'],
+  xbox: ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'View', 'Menu', 'LS', 'RS', '↑', '↓', '←', '→', 'Xbox'],
+  switch: ['B', 'A', 'Y', 'X', 'L', 'R', 'ZL', 'ZR', '−', '+', 'LS', 'RS', '↑', '↓', '←', '→', 'Home'],
+};
+export const padGlyph = (i, type = 'xbox') => (i == null ? '—' : (GLYPHS[type] || GLYPHS.xbox)[i] || 'B' + i);
+export function padTypeOf(id = '') {
+  if (/054c|playstation|dualsense|dualshock|wireless controller|ps[345]/i.test(id)) return 'ps';
+  if (/057e|nintendo|switch|pro controller|joy-con/i.test(id)) return 'switch';
+  return 'xbox';
+}
+
 let layout = null;
 if (navigator.keyboard?.getLayoutMap) navigator.keyboard.getLayoutMap().then((m) => (layout = m)).catch(() => {});
 
@@ -82,7 +95,12 @@ export class Input {
     this.pad = { ...DEFAULT_PAD };
     this.capture = null;    // reconfiguration d'une touche
     this.padCapture = null; // reconfiguration d'un bouton de manette
+    // dernier appareil utilisé : 'kb' (clavier / souris) ou 'pad' (manette)
+    this.device = 'kb'; this.padType = 'xbox';
+    addEventListener('mousedown', () => { this.device = 'kb'; });
+    addEventListener('mousemove', (e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 4) this.device = 'kb'; });
     addEventListener('keydown', (e) => {
+      this.device = 'kb';
       if (this.capture) {
         e.preventDefault();
         if (e.code !== 'Escape') this.capture(e.code);
@@ -121,6 +139,7 @@ export class Input {
     }
     const gp = this.gamepad();
     this.padMap = false;
+    if (gp && (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.4))) { this.device = 'pad'; this.padType = padTypeOf(gp.id); }
     if (gp && !this.padCapture) {
       const dz = (v) => (Math.abs(v) > 0.25 ? v : 0);
       if (dz(gp.axes[0]) || dz(gp.axes[1])) { mx = dz(gp.axes[0]); my = dz(gp.axes[1]); }
@@ -144,6 +163,7 @@ export class Input {
     const out = [];
     const gp = this.gamepad();
     if (!gp) return out;
+    if (gp.buttons.some((x) => x.pressed) || gp.axes.some((v) => Math.abs(v) > 0.4)) { this.device = 'pad'; this.padType = padTypeOf(gp.id); }
     const b = (i) => !!gp.buttons[i]?.pressed;
     if (this.padCapture) {
       // on attend qu'un bouton soit pressé pour le réattribuer

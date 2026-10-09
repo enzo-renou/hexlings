@@ -84,8 +84,12 @@ export class Renderer {
     this.world = mk(GW, GH);
     this.prev = mk(GW, GH);
     this.ent.ctx.pxk = PX; this.fx.ctx.pxk = PX;
+    // Textes lisses : tout ce qui est écrit sur l'interface est redirigé vers un calque
+    // en pleine résolution (pas de passe pixel), avec un fin contour sombre pour la lisibilité.
     this.hud = mk(VIEW_W, VIEW_H, true);
     this.ovl = mk(VIEW_W, VIEW_H, true);
+    this.txtH = mk(VIEW_W * MS, VIEW_H * MS); this.txtO = mk(VIEW_W * MS, VIEW_H * MS);
+    this.hookText(this.hud.ctx, this.txtH.ctx); this.hookText(this.ovl.ctx, this.txtO.ctx);
     this.lctx = this.light.ctx;
     this.shakeOn = true;
     this.highlight = 'arrow';
@@ -116,6 +120,39 @@ export class Renderer {
     if (!this.slow) return 1;
     const k = this.slow.t / this.slow.dur;
     return k < 0.7 ? this.slow.k : this.slow.k + (1 - this.slow.k) * ((k - 0.7) / 0.3);
+  }
+  hookText(src, dst) {
+    const lum = (c) => { if (typeof c !== 'string' || c[0] !== '#') return 1; const n = parseInt(c.length === 4 ? c.slice(1).replace(/./g, '$&$&') : c.slice(1, 7), 16); return (((n >> 16) & 255) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11) / 255; };
+    src.fillText = (text, x, y, maxW) => {
+      const m = src.getTransform();
+      dst.setTransform(m.a * MS, m.b * MS, m.c * MS, m.d * MS, m.e * MS, m.f * MS);
+      dst.font = src.font; dst.textAlign = src.textAlign; dst.textBaseline = src.textBaseline;
+      dst.globalAlpha = src.globalAlpha; dst.fillStyle = src.fillStyle;
+      if (lum(src.fillStyle) > 0.35) {
+        dst.lineJoin = 'round'; dst.strokeStyle = 'rgba(12,6,20,0.9)'; dst.lineWidth = 3 / MS / Math.max(0.3, Math.hypot(m.a, m.b));
+        if (maxW) dst.strokeText(text, x, y, maxW); else dst.strokeText(text, x, y);
+      }
+      if (maxW) dst.fillText(text, x, y, maxW); else dst.fillText(text, x, y);
+    };
+  }
+  clearText(cv) { const g = cv.ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.clearRect(0, 0, cv.width, cv.height); }
+  // pastille de touche : ronde et colorée pour les boutons de face de la manette
+  keyBadge(c, label, x, y) {
+    const k = this.keyNames || {};
+    const FACE = { ps: { '✕': '#7aa8ff', '○': '#ff6a7a', '□': '#ff8ad8', '△': '#5affb0' }, xbox: { A: '#6ae06a', B: '#ff5a5a', X: '#5aa8ff', Y: '#ffd34a' }, switch: { A: '#ff6a6a', B: '#ffd34a', X: '#6aa8ff', Y: '#6ae06a' } };
+    const col = k.pad && FACE[k.pad] ? FACE[k.pad][label] : null;
+    c.font = `bold 10px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    if (col) {
+      c.fillStyle = '#0c0814'; c.beginPath(); c.arc(x, y, 7.5, 0, TAU); c.fill();
+      c.fillStyle = '#2a2236'; c.beginPath(); c.arc(x, y, 6.5, 0, TAU); c.fill();
+      c.fillStyle = col; c.fillText(label, x, y + 0.5);
+    } else {
+      const w = Math.max(14, c.measureText(label).width + 8);
+      c.fillStyle = '#0c0814'; c.fillRect(Math.round(x - w / 2) - 1, y - 8, Math.round(w) + 2, 16);
+      c.fillStyle = '#2a2236'; c.fillRect(Math.round(x - w / 2), y - 7, Math.round(w), 14);
+      c.fillStyle = '#e8dcc0'; c.fillText(label, x, y + 0.5);
+    }
+    c.textBaseline = 'alphabetic';
   }
   // un objet ramassé file vers son compteur en haut à gauche
   fly(kind, x, y) { this.flyers.push({ kind, sx: x - this.camX, sy: y - this.camY - 10, t: 0 }); if (this.flyers.length > 30) this.flyers.shift(); }
@@ -1497,16 +1534,19 @@ export class Renderer {
     H.setTransform(1, 0, 0, 1, 0, 0);
     H.globalAlpha = 1;
     H.clearRect(0, 0, VIEW_W, VIEW_H);
-    if (!this.trans && this.zoomK <= 0.004) this.drawWorldTexts(H, shx - cx, shy - cy);
+    this.clearText(this.txtH); this.clearText(this.txtO);
+    if (!this.trans && this.zoomK <= 0.004 && !this.showMap) this.drawWorldTexts(H, shx / PX - cx, shy / PX - cy);
     if (snap.room.type === 'start' && snap.floor === 1) this.drawTutorial(H);
     this.drawHUD(H, snap, me, meId, dt, extra, B);
     if (this.vs) this.drawVersus(H, me, dt);
     pixelize(H, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
     if (this.showMap) { m.fillStyle = 'rgba(8,5,14,0.72)'; m.fillRect(0, 0, SW, SH); }
     m.drawImage(this.hud, 0, 0, SW, SH);
+    m.drawImage(this.txtH, 0, 0, SW, SH);
     if (this.ovlUsed) {
       pixelize(this.ovl.ctx, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
-      m.globalAlpha = 0.62; m.drawImage(this.ovl, 0, 0, SW, SH); m.globalAlpha = 1;
+      m.globalAlpha = 0.62; m.drawImage(this.ovl, 0, 0, SW, SH);
+      m.globalAlpha = 0.9; m.drawImage(this.txtO, 0, 0, SW, SH); m.globalAlpha = 1;
     }
   }
 
@@ -1533,17 +1573,33 @@ export class Renderer {
     H.globalAlpha = 1;
   }
 
+  // consignes de la première salle : gravées dans le sol, discrètes (comme dans Isaac)
   drawTutorial(H) {
-    H.font = `14px ${FONT}`; H.textAlign = 'center'; H.fillStyle = '#d8d0e8';
-    H.globalAlpha = 0.85;
     const k = this.keyNames || {};
+    const T = this.txtH.ctx;
     const ox = -this.camX, oy = -this.camY;
-    H.fillText(`${k.move || 'ZQSD'} : se déplacer`, VIEW_W / 2 + ox, 112 + oy);
-    const shoot = /[↑↓←→]/.test(k.shoot || '↑') ? 'Flèches' : k.shoot;
-    H.fillText(`${shoot} : lancer des sorts (haut, bas, gauche, droite)`, VIEW_W / 2 + ox, 132 + oy);
-    H.fillText(`${k.spell || 'Espace'} : sort  ·  ${k.bomb || 'E'} : bombe  ·  ${k.orb || 'A'} : orbe  ·  ${k.potion || 'R'} : potion  ·  ${k.inv || 'B'} : objets`, VIEW_W / 2 + ox, 316 + oy);
-    H.fillText(`${k.map || 'Tab'} : carte  ·  1-4 : émotes  ·  Échap : paramètres`, VIEW_W / 2 + ox, 336 + oy);
-    H.globalAlpha = 1;
+    const pad = !!k.pad;
+    const lines = pad ? [
+      [`${k.move} : se déplacer`, 112],
+      [`${k.shoot} : lancer des sorts`, 134],
+      [`${k.spell} : sort   ·   ${k.bomb} : bombe   ·   ${k.orb} : orbe   ·   ${k.potion} : potion   ·   ${k.inv} : objets`, 314],
+      [`${k.map} : carte   ·   ${k.emotes} : émotes   ·   ${k.pause} : paramètres`, 336],
+    ] : [
+      [`${k.move || 'ZQSD'} : se déplacer`, 112],
+      [`${/[↑↓←→]/.test(k.shoot || '↑') ? 'Flèches' : k.shoot} : lancer des sorts (haut, bas, gauche, droite)`, 134],
+      [`${k.spell || 'Espace'} : sort   ·   ${k.bomb || 'E'} : bombe   ·   ${k.orb || 'A'} : orbe   ·   ${k.potion || 'R'} : potion   ·   ${k.inv || 'B'} : objets`, 314],
+      [`${k.map || 'Tab'} : carte   ·   ${k.emotes || '1-4'} : émotes   ·   ${k.pause || 'Échap'} : paramètres`, 336],
+    ];
+    T.setTransform(MS, 0, 0, MS, 0, 0);
+    T.font = `15px ${FONT}`; T.textAlign = 'center'; T.textBaseline = 'alphabetic';
+    for (const [txt, y] of lines) {
+      const x = VIEW_W / 2 + ox, yy = y + oy;
+      // creux sombre + reflet clair décalé : effet gravé
+      T.globalAlpha = 0.5; T.fillStyle = '#000000'; T.fillText(txt, x, yy);
+      T.globalAlpha = 0.16; T.fillStyle = '#fff4dc'; T.fillText(txt, x + 0.5, yy + 1);
+    }
+    T.globalAlpha = 1;
+    void H;
   }
 
   // -------------------------------------------------- interface (style rétro)
@@ -1649,6 +1705,7 @@ export class Renderer {
       // sort actif
       const bx = 42, by = 6;
       this.frame(ctx, bx, by, 42, 42, { rivets: true });
+      this.keyBadge(ctx, k.spell || 'Espace', bx + 21, by + 50);
       if (me.act) {
         const ready = me.act.ch >= me.act.mx;
         ctx.globalAlpha = ready ? 1 : 0.4;
@@ -1716,8 +1773,7 @@ export class Renderer {
       this.frame(ctx, sx + 48, sy, 40, 40, { bg: '#100a18' });
       if (me.orb) this.drawOrbIcon(ctx, me.orb, sx + 20, sy + 19, 15);
       if (me.pot) this.drawPotionIcon(ctx, me.pot[1], sx + 68, sy + 22, 14, !!me.pot[2]);
-      ctx.font = `10px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = '#a898b8';
-      ctx.fillText(k.orb || 'A', sx + 20, sy - 3); ctx.fillText(k.potion || 'R', sx + 68, sy - 3);
+      this.keyBadge(ctx, k.orb || 'A', sx + 20, sy - 8); this.keyBadge(ctx, k.potion || 'R', sx + 68, sy - 8);
       if (me.orb) { ctx.fillStyle = '#8ad8ff'; ctx.font = `11px ${FONT}`; ctx.textAlign = 'right'; ctx.fillText(ORBS[me.orb]?.name || '', sx - 6, sy + 16); }
       if (me.pot) { ctx.fillStyle = '#ff9af0'; ctx.font = `11px ${FONT}`; ctx.textAlign = 'right'; ctx.fillText(me.pot[2] ? POTIONS[me.pot[0]]?.name : 'Potion inconnue', sx - 6, sy + 32); }
     }

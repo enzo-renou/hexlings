@@ -12,7 +12,7 @@ import { renderInventory } from './inventory.js';
 import { BIOMES } from '/shared/biomes.js';
 import { Renderer } from './render.js';
 import { drawPixelWizard } from './sprites.js';
-import { Input, ACTIONS, DEFAULT_KEYS, keyLabel, PAD_ACTIONS, DEFAULT_PAD, padLabel } from './input.js';
+import { Input, ACTIONS, DEFAULT_KEYS, keyLabel, PAD_ACTIONS, DEFAULT_PAD, padLabel, padGlyph } from './input.js';
 import { initTooltips, itemChip } from './tooltip.js';
 import { drawWizardSprite } from './art.js';
 import { menuTexture, pixelize } from './pixel.js';
@@ -35,14 +35,28 @@ renderer.shakeOn = S0.shake !== false;
 renderer.highlight = S0.highlight || 'arrow';
 renderer.dmgNumbers = S0.dmgNumbers !== false;
 document.documentElement.style.setProperty('--stone', `url(${menuTexture()})`);
+let lastDevice = '';
+// les touches affichées suivent le dernier appareil touché : clavier ou manette (PlayStation, Xbox, Switch)
 function refreshKeyNames() {
   const b = input.bind;
-  renderer.keyNames = {
-    move: [b.up, b.left, b.down, b.right].map(keyLabel).join(''),
-    shoot: [b.shootUp, b.shootLeft, b.shootDown, b.shootRight].map(keyLabel).join(' '),
-    spell: keyLabel(b.spell), bomb: keyLabel(b.bomb), map: keyLabel(b.map), inv: keyLabel(b.inv), orb: keyLabel(b.orb), potion: keyLabel(b.potion),
-  };
-  const ik = document.querySelector('#inv-key'); if (ik) ik.textContent = keyLabel(b.inv);
+  if (input.device === 'pad') {
+    const g = (a) => padGlyph(input.pad[a], input.padType);
+    renderer.keyNames = {
+      pad: input.padType, move: 'Stick gauche', shoot: 'Stick droit',
+      spell: g('spell'), bomb: g('bomb'), map: g('map'), inv: g('inv'), orb: g('orb'), potion: g('potion'), pause: g('pause'), emotes: 'Flèches',
+    };
+  } else {
+    renderer.keyNames = {
+      move: [b.up, b.left, b.down, b.right].map(keyLabel).join(''),
+      shoot: [b.shootUp, b.shootLeft, b.shootDown, b.shootRight].map(keyLabel).join(' '),
+      spell: keyLabel(b.spell), bomb: keyLabel(b.bomb), map: keyLabel(b.map), inv: keyLabel(b.inv), orb: keyLabel(b.orb), potion: keyLabel(b.potion), pause: 'Échap', emotes: '1-4',
+    };
+  }
+  const inv = renderer.keyNames.inv;
+  const ik = document.querySelector('#inv-key'); if (ik) { ik.textContent = inv; ik.className = renderer.keyNames.pad ? 'padkey ' + renderer.keyNames.pad + ' k' + inv.charCodeAt(0) : ''; }
+  const ck = document.querySelector('#inv-close-key'); if (ck) ck.textContent = `(${inv})`;
+  const bi = document.querySelector('#btn-inv'); if (bi) bi.title = `Inventaire (${inv})`;
+  lastDevice = input.device + input.padType;
 }
 refreshKeyNames();
 setTimeout(refreshKeyNames, 500);
@@ -714,6 +728,7 @@ function handlePad() {
 
 // ---------------------------------------------------------- boucle
 function frame(now) {
+  if (input.device + input.padType !== lastDevice) refreshKeyNames();
   placeGear();
   handlePad();
   if (input.consume('inv')) toggleInv();
