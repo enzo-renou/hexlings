@@ -12,59 +12,70 @@ const cl = (v) => (v < 0 ? 0 : v > 255 ? 255 : v | 0);
 // Transforme un calque dessiné « en vectoriel » en vrai pixel art :
 // alpha tramé (Bayer 4x4) et contour sombre de 1 pixel autour des formes pleines.
 const solidBuf = { n: 0, a: null };
-export function pixelize(ctx, w, h, { outline = false, solid = 0.8, dither = true, minA = 0.08 } = {}) {
-  const img = ctx.getImageData(0, 0, w, h);
+const LE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1; // ordre des octets (quasi toujours little-endian)
+const OUT32 = LE ? ((255 << 24) | (OUTLINE[2] << 16) | (OUTLINE[1] << 8) | OUTLINE[0]) >>> 0 : ((OUTLINE[0] << 24) | (OUTLINE[1] << 16) | (OUTLINE[2] << 8) | 255) >>> 0;
+// Version rapide : lecture des pixels par mots de 32 bits, les pixels vides sont sautés tout de suite.
+export function pixelize(ctx, w, h, { outline = false, solid = 0.8, dither = true, minA = 0.08, x: ox = 0, y: oy = 0 } = {}) {
+  if (w <= 0 || h <= 0) return;
+  const img = ctx.getImageData(ox, oy, w, h);
   const d = img.data;
+  const u = new Uint32Array(d.buffer, d.byteOffset, d.length >> 2);
   const n = w * h;
   if (solidBuf.n < n) { solidBuf.a = new Uint8Array(n); solidBuf.n = n; }
   const S = solidBuf.a;
+  const sA = solid * 255, mA = minA * 255;
+  let any = false;
   for (let y = 0, i = 0; y < h; y++) {
     const by = (y & 3) * 4;
     for (let x = 0; x < w; x++, i++) {
-      const a = d[i * 4 + 3] / 255;
-      if (a >= solid) { d[i * 4 + 3] = 255; S[i] = 1; }
+      if (u[i] === 0) { S[i] = 0; continue; }
+      const a = d[i * 4 + 3];
+      if (a >= sA) { d[i * 4 + 3] = 255; S[i] = 1; any = true; }
       else {
         S[i] = 0;
-        d[i * 4 + 3] = dither && a > minA && a > BAYER[by + (x & 3)] * solid ? 255 : 0;
+        d[i * 4 + 3] = dither && a > mA && a > BAYER[by + (x & 3)] * sA ? 255 : 0;
       }
     }
   }
-  if (outline) {
+  if (outline && any) {
     for (let y = 0, i = 0; y < h; y++) {
       for (let x = 0; x < w; x++, i++) {
         if (S[i] || d[i * 4 + 3]) continue;
-        if ((x > 0 && S[i - 1]) || (x < w - 1 && S[i + 1]) || (y > 0 && S[i - w]) || (y < h - 1 && S[i + w])) {
-          d[i * 4] = OUTLINE[0]; d[i * 4 + 1] = OUTLINE[1]; d[i * 4 + 2] = OUTLINE[2]; d[i * 4 + 3] = 255;
-        }
+        if ((x > 0 && S[i - 1]) || (x < w - 1 && S[i + 1]) || (y > 0 && S[i - w]) || (y < h - 1 && S[i + w])) u[i] = OUT32;
       }
     }
   }
-  ctx.putImageData(img, 0, 0);
+  ctx.putImageData(img, ox, oy);
 }
 
-// Obscurité par paliers tramés (éclairage rétro) + vignette
-let vig = null;
+// Obscurité par paliers (éclairage rétro) + vignette. Tout est précalculé dans des tables :
+// pour chaque niveau de noir (0..510) et chaque case de la trame 4x4, le pixel final.
+let vig = null, darkLUT = null, darkLevels = 0;
 export function quantizeDark(ctx, w, h, levels = 5) {
   if (!vig || vig.length !== w * h) {
-    vig = new Float32Array(w * h);
+    vig = new Uint16Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const dx = (x - w / 2) / (w / 2), dy = (y - h / 2) / (h / 2);
-      vig[y * w + x] = Math.max(0, Math.hypot(dx * 0.85, dy) - 0.55) * 0.55;
+      vig[y * w + x] = Math.round(Math.max(0, Math.hypot(dx * 0.85, dy) - 0.55) * 0.55 * 255);
+    }
+  }
+  if (!darkLUT || darkLevels !== levels) {
+    darkLevels = levels;
+    darkLUT = new Uint32Array(511 * 16);
+    for (let v = 0; v < 511; v++) for (let bI = 0; bI < 16; bI++) {
+      let a = v / 255; if (a > 0.85) a = 0.85;
+      const f = a * levels, base = Math.floor(f), frac = f - base;
+      const q = (base + (frac > 0.75 && BAYER[bI] < (frac - 0.75) * 4 ? 1 : 0)) / levels;
+      const A = cl(Math.min(0.95, q) * 255);
+      darkLUT[v * 16 + bI] = LE ? ((A << 24) | (16 << 16) | (5 << 8) | 8) >>> 0 : ((8 << 24) | (5 << 16) | (16 << 8) | A) >>> 0;
     }
   }
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
+  const u = new Uint32Array(d.buffer, d.byteOffset, d.length >> 2);
   for (let y = 0, i = 0; y < h; y++) {
     const by = (y & 3) * 4;
-    for (let x = 0; x < w; x++, i++) {
-      let a = d[i * 4 + 3] / 255 + vig[i];
-      if (a > 0.85) a = 0.85;
-      // paliers nets (comme les vieux jeux), tramage uniquement sur la frontière entre deux paliers
-      const f = a * levels, base = Math.floor(f), frac = f - base;
-      const q = (base + (frac > 0.75 && BAYER[by + (x & 3)] < (frac - 0.75) * 4 ? 1 : 0)) / levels;
-      d[i * 4] = 8; d[i * 4 + 1] = 5; d[i * 4 + 2] = 16;
-      d[i * 4 + 3] = cl(Math.min(0.95, q) * 255);
-    }
+    for (let x = 0; x < w; x++, i++) u[i] = darkLUT[(d[i * 4 + 3] + vig[i]) * 16 + by + (x & 3)];
   }
   ctx.putImageData(img, 0, 0);
 }
@@ -75,27 +86,48 @@ function put(d, w, x, y, c) { const i = (y * w + x) * 4; d[i] = c[0]; d[i + 1] =
 
 // Pavés irréguliers (diagramme de Voronoï) : le sol des donjons
 function cobble(d, w, x0, y0, x1, y1, base, cell, seed, opt = {}) {
-  const grout = shade(base, 0.38);
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-    const cx = Math.floor(x / cell), cy = Math.floor(y / cell);
-    let d1 = 1e9, d2 = 1e9, id = 0, sx = 0, sy = 0;
-    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-      const gx = cx + i, gy = cy + j;
-      const px = (gx + 0.15 + h2(gx, gy, seed) * 0.7) * cell, py = (gy + 0.15 + h2(gy, gx, seed + 7) * 0.7) * cell;
-      const dd = Math.hypot(x - px, y - py);
-      if (dd < d1) { d2 = d1; d1 = dd; id = gx * 131 + gy; sx = px; sy = py; } else if (dd < d2) d2 = dd;
+  // Pavés (diagramme de Voronoï). Version rapide : les centres des pierres sont calculés
+  // une seule fois, distances au carré, couleurs écrites directement (pas de tableaux temporaires).
+  const gx0 = Math.floor(x0 / cell) - 1, gy0 = Math.floor(y0 / cell) - 1;
+  const GW = Math.floor((x1 - 1) / cell) + 2 - gx0, GH = Math.floor((y1 - 1) / cell) + 2 - gy0;
+  const PXs = new Float32Array(GW * GH), PYs = new Float32Array(GW * GH), V = new Float32Array(GW * GH), M = new Uint8Array(GW * GH);
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const gx = gx0 + i, gy = gy0 + j, k = j * GW + i;
+    PXs[k] = (gx + 0.15 + h2(gx, gy, seed) * 0.7) * cell; PYs[k] = (gy + 0.15 + h2(gy, gx, seed + 7) * 0.7) * cell;
+    const id = gx * 131 + gy;
+    V[k] = 0.82 + h2(id, 3, seed) * 0.3;
+    M[k] = opt.moss && h2(id, 9, seed) < opt.moss ? 1 : 0;
+  }
+  const br = base[0], bg = base[1], bb = base[2];
+  const gr = br * 0.38, gg = bg * 0.38, gb = bb * 0.38;
+  const moss = rgb('#4a6a32');
+  const inv = 0.18 / cell;
+  for (let y = y0; y < y1; y++) {
+    const cy = Math.floor(y / cell) - gy0;
+    for (let x = x0; x < x1; x++) {
+      const cx = Math.floor(x / cell) - gx0;
+      let d1 = 1e18, d2 = 1e18, kk = 0;
+      for (let j = cy - 1; j <= cy + 1; j++) for (let i = cx - 1; i <= cx + 1; i++) {
+        const k = j * GW + i, dx = x - PXs[k], dy = y - PYs[k], dd = dx * dx + dy * dy;
+        if (dd < d1) { d2 = d1; d1 = dd; kk = k; } else if (dd < d2) d2 = dd;
+      }
+      const edge = Math.sqrt(d2) - Math.sqrt(d1);
+      const o = (y * w + x) * 4;
+      if (edge < 1.25) {
+        const n = (h2(x, y, seed) - 0.5) * 10;
+        d[o] = cl(gr + n); d[o + 1] = cl(gg + n); d[o + 2] = cl(gb + n);
+      } else if (M[kk] && h2(x, y, seed + 3) < 0.55) {
+        const k2 = 0.9 + h2(x, y) * 0.3;
+        d[o] = cl(moss[0] * k2); d[o + 1] = cl(moss[1] * k2); d[o + 2] = cl(moss[2] * k2);
+      } else {
+        const sx = PXs[kk], sy = PYs[kk];
+        const rel = (x - sx) + (y - sy);
+        const v = V[kk] - rel * inv + (edge < 2.3 ? (rel < 0 ? 0.12 : -0.12) : 0);
+        const n = (h2(x, y, seed + 1) - 0.5) * 14;
+        d[o] = cl(br * v + n); d[o + 1] = cl(bg * v + n); d[o + 2] = cl(bb * v + n);
+      }
+      d[o + 3] = 255;
     }
-    const edge = d2 - d1;
-    let c;
-    if (edge < 1.25) c = shade(grout, 1, (h2(x, y, seed) - 0.5) * 10);
-    else {
-      const v = 0.82 + h2(id, 3, seed) * 0.3;
-      const light = -((x - sx) + (y - sy)) / cell * 0.18;
-      const rim = edge < 2.3 ? ((x - sx) + (y - sy) < 0 ? 0.12 : -0.12) : 0;
-      c = shade(base, v + light + rim, (h2(x, y, seed + 1) - 0.5) * 14);
-      if (opt.moss && h2(id, 9, seed) < opt.moss && h2(x, y, seed + 3) < 0.55) c = shade(rgb('#4a6a32'), 0.9 + h2(x, y) * 0.3);
-    }
-    put(d, w, x, y, c);
   }
 }
 
@@ -218,20 +250,25 @@ export function paintRoom(ctx, B, tiles, W, H, T, seed) {
   const d = img.data;
   const fb = rgb(B.floor);
   const isWall = (x, y) => x < 0 || y < 0 || x >= W || y >= H || tiles[y * W + x] === 1;
+  // le sol n'est peint que dans le rectangle qui contient les cases de sol (pas sous les murs)
+  let tx0 = W, ty0 = H, tx1 = 0, ty1 = 0;
+  for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) if (!isWall(tx, ty)) { tx0 = Math.min(tx0, tx); ty0 = Math.min(ty0, ty); tx1 = Math.max(tx1, tx + 1); ty1 = Math.max(ty1, ty + 1); }
+  if (tx1 <= tx0) { tx0 = 0; ty0 = 0; tx1 = W; ty1 = H; }
+  const FX0 = tx0 * T, FY0 = ty0 * T, FX1 = tx1 * T, FY1 = ty1 * T;
   switch (B.deco) {
-    case 'forest': grass(d, PW, 0, 0, PW, PH, fb, seed); break;
-    case 'swamp': grass(d, PW, 0, 0, PW, PH, rgb('#3a4a2a'), seed); break;
-    case 'graveyard': cobble(d, PW, 0, 0, PW, PH, rgb('#4a4f4c'), 7, seed, { moss: 0.18 }); break;
-    case 'library': planks(d, PW, 0, 0, PW, PH, rgb('#6a4a30'), seed); break;
-    case 'clockwork': planks(d, PW, 0, 0, PW, PH, rgb('#5a4a3a'), seed); break;
-    case 'frost': iceTiles(d, PW, 0, 0, PW, PH, rgb('#5a7f9a'), seed); break;
-    case 'abyss': cobble(d, PW, 0, 0, PW, PH, rgb('#2a2448'), 8, seed); for (let k = 0; k < 60 * (PW * PH) / (360 * 216); k++) put(d, PW, Math.floor(h2(k, 1, seed) * PW), Math.floor(h2(k, 2, seed) * PH), [200, 180, 255]); break;
-    case 'volcano': cobble(d, PW, 0, 0, PW, PH, rgb('#4a3030'), 7, seed); break;
-    case 'sands': cobble(d, PW, 0, 0, PW, PH, rgb('#a08458'), 9, seed); break;
-    case 'caves': cobble(d, PW, 0, 0, PW, PH, rgb('#3c4260'), 9, seed); break;
-    case 'crypt': cobble(d, PW, 0, 0, PW, PH, rgb('#3a4458'), 6, seed); break;
-    case 'tower': cobble(d, PW, 0, 0, PW, PH, rgb('#3b3260'), 7, seed); break;
-    default: cobble(d, PW, 0, 0, PW, PH, rgb('#56505e'), 7, seed);
+    case 'forest': grass(d, PW, FX0, FY0, FX1, FY1, fb, seed); break;
+    case 'swamp': grass(d, PW, FX0, FY0, FX1, FY1, rgb('#3a4a2a'), seed); break;
+    case 'graveyard': cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#4a4f4c'), 7, seed, { moss: 0.18 }); break;
+    case 'library': planks(d, PW, FX0, FY0, FX1, FY1, rgb('#6a4a30'), seed); break;
+    case 'clockwork': planks(d, PW, FX0, FY0, FX1, FY1, rgb('#5a4a3a'), seed); break;
+    case 'frost': iceTiles(d, PW, FX0, FY0, FX1, FY1, rgb('#5a7f9a'), seed); break;
+    case 'abyss': cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#2a2448'), 8, seed); for (let k = 0; k < 60 * (PW * PH) / (360 * 216); k++) put(d, PW, Math.floor(h2(k, 1, seed) * PW), Math.floor(h2(k, 2, seed) * PH), [200, 180, 255]); break;
+    case 'volcano': cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#4a3030'), 7, seed); break;
+    case 'sands': cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#a08458'), 9, seed); break;
+    case 'caves': cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#3c4260'), 9, seed); break;
+    case 'crypt': cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#3a4458'), 6, seed); break;
+    case 'tower': cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#3b3260'), 7, seed); break;
+    default: cobble(d, PW, FX0, FY0, FX1, FY1, rgb('#56505e'), 7, seed);
   }
   // murs : texture par tuile, puis ombrage selon le côté qui fait face au sol
   const wb = rgb(B.wallHi);
@@ -250,12 +287,12 @@ export function paintRoom(ctx, B, tiles, W, H, T, seed) {
       default: bricks(d, PW, x0, y0, x1, y1, B.wallStyle === 'rune' ? rgb('#3e3270') : shade(wb, 1.05), seed);
     }
   };
-  // texture des murs sur toute la surface puis on remet le sol là où il faut (plus rapide que tuile par tuile)
-  const floorCopy = new Uint8ClampedArray(d);
-  wallTex(0, 0, PW, PH);
+  // texture des murs uniquement sur les cases de mur visibles (les autres sont du vide)
   for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
-    if (isWall(tx, ty)) continue;
-    for (let y = ty * T; y < ty * T + T; y++) { const i0 = (y * PW + tx * T) * 4; d.set(floorCopy.subarray(i0, i0 + T * 4), i0); }
+    if (!isWall(tx, ty)) continue;
+    let near = false;
+    for (let j = -1; j <= 1 && !near; j++) for (let i = -1; i <= 1; i++) if (!isWall(tx + i, ty + j)) { near = true; break; }
+    if (near) wallTex(tx * T, ty * T, tx * T + T, ty * T + T);
   }
   const mul = (x, y, k) => { const i = (y * PW + x) * 4; d[i] = cl(d[i] * k); d[i + 1] = cl(d[i + 1] * k); d[i + 2] = cl(d[i + 2] * k); };
   const cap = Math.floor(T * 0.42);
@@ -278,18 +315,7 @@ export function paintRoom(ctx, B, tiles, W, H, T, seed) {
     if (right) for (let y = ty * T; y < ty * T + T; y++) put(d, PW, tx * T + T - 1, y, edge);
     if (left) for (let y = ty * T; y < ty * T + T; y++) put(d, PW, tx * T, y, edge);
   }
-  // ombres portées tramées sous les murs du haut et à droite des murs de gauche
-  for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
-    if (isWall(tx, ty)) continue;
-    if (isWall(tx, ty - 1)) for (let y = ty * T; y < ty * T + 7; y++) for (let x = tx * T; x < tx * T + T; x++) {
-      const k = 1 - (y - ty * T) / 7;
-      if (BAYER[(y & 3) * 4 + (x & 3)] < k * 0.9) mul(x, y, 0.55);
-    }
-    if (isWall(tx - 1, ty)) for (let x = tx * T; x < tx * T + 4; x++) for (let y = ty * T; y < ty * T + T; y++) {
-      const k = 1 - (x - tx * T) / 4;
-      if (BAYER[(y & 3) * 4 + (x & 3)] < k * 0.7) mul(x, y, 0.65);
-    }
-  }
+  // (les ombres des murs sur le sol sont ajoutées ensuite, en dégradé doux, par le moteur de rendu)
   ctx.putImageData(img, 0, 0);
 }
 

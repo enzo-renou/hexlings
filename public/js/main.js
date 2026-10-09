@@ -381,6 +381,7 @@ function handleEvents(evs, snap, meId) {
       case 'tbreak': audio.play('tbreak', ev.t); break;
       case 'descend': audio.play('descend'); break;
       case 'floor':
+        if (mode === 'solo' && game?.fl) renderer.warmFloor(game.fl.rooms, ev.biome || game.biomeId, ev.n, (game.floorBoss || '').replace('+', ''));
         audio.play('floor');
         if (ev.n > meta.data.bestFloor) { meta.data.bestFloor = ev.n; meta.save(); }
         break;
@@ -727,7 +728,19 @@ function handlePad() {
 }
 
 // ---------------------------------------------------------- boucle
+// La boucle ne doit jamais s'arrêter : si une image plante, on la saute, on note l'erreur
+// (une fois) et on continue à l'image suivante au lieu de figer le jeu.
+let frameErrors = 0;
 function frame(now) {
+  try { frameBody(now); }
+  catch (e) {
+    frameErrors++;
+    if (frameErrors <= 3) console.error('[Hexlings] image sautée :', e);
+    try { renderer.ctx.setTransform(1, 0, 0, 1, 0, 0); } catch { /* ignore */ }
+  }
+  requestAnimationFrame(frame);
+}
+function frameBody(now) {
   if (input.device + input.padType !== lastDevice) refreshKeyNames();
   placeGear();
   handlePad();
@@ -777,7 +790,6 @@ function frame(now) {
   // battement de cœur quand il ne reste presque plus de vie
   const meL = lastSnap && inGame && !paused ? lastSnap.players.find((p) => p.id === (mode === 'solo' ? 'local' : net?.id)) : null;
   if (meL && !meL.dead && meL.hp <= 2 && !(meL.soul || '').length && now - lastBeat > 900) { lastBeat = now; audio.play('heartbeat'); }
-  requestAnimationFrame(frame);
 }
 let lastBeat = 0;
 
@@ -896,4 +908,4 @@ try { if (sessionStorage.getItem('hexlings.session')) ensureNet(); } catch { /* 
 meta.onChange = () => { if (!inGame) $('#nav-shards').textContent = `◆ ${meta.data.shards}`; };
 
 // accès console pour tester : window.hex
-window.hex = { get game() { return game; }, meta };
+window.hex = { get game() { return game; }, meta, renderer };

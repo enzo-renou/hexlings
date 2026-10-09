@@ -283,8 +283,16 @@ setInterval(() => {
     if (!g || l.ended) continue;
     l.acc += Math.min(250, now - l.last) / 1000;
     l.last = now;
-    while (l.acc >= DT) { g.step(DT); l.acc -= DT; }
-    const snap = g.snapshot();
+    // une erreur dans une partie ne doit ni la figer ni bloquer les autres parties
+    try {
+      while (l.acc >= DT) { l.acc -= DT; g.step(DT); }
+    } catch (e) {
+      l.errors = (l.errors || 0) + 1;
+      if (l.errors <= 3) console.error(`[partie ${l.code}] erreur de simulation :`, e);
+      continue;
+    }
+    let snap;
+    try { snap = g.snapshot(); } catch (e) { console.error(`[partie ${l.code}] erreur d'envoi :`, e); continue; }
     // les tuiles et la carte ne changent pas souvent : on ne les renvoie que si besoin (ou toutes les 2 s)
     const full = snap.roomVer !== l.sentVer || now - (l.sentT || 0) > 2000;
     if (full) { l.sentVer = snap.roomVer; l.sentT = now; } else { delete snap.room.tiles; delete snap.map; }

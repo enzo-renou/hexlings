@@ -25,6 +25,14 @@ const MS = 2;                    // agrandissement à l'écran (pixels nets)
 const PX = 2 / 3;
 const GW = Math.round(AW * PX), GH = Math.round(AH * PX);
 const snapPx = (v) => Math.round(v * PX) / PX;
+// Sécurité : un rayon négatif (forme qui grandit depuis 0, fin d'animation...) fait planter le dessin.
+// On le ramène à 0 au lieu de laisser l'erreur figer le jeu.
+{
+  const P = CanvasRenderingContext2D.prototype;
+  const arc0 = P.arc, ell0 = P.ellipse;
+  P.arc = function (x, y, r, a0, a1, ccw) { return arc0.call(this, x, y, r > 0 ? r : 0, a0, a1, ccw); };
+  P.ellipse = function (x, y, rx, ry, rot, a0, a1, ccw) { return ell0.call(this, x, y, rx > 0 ? rx : 0, ry > 0 ? ry : 0, rot, a0, a1, ccw); };
+}
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -370,12 +378,10 @@ export class Renderer {
     const g = this.bg.ctx;
     g.setTransform(1, 0, 0, 1, 0, 0);
     // sol et murs texturés peints en basse résolution (grain « donjon rétro »), puis agrandis
-    if (!this.lowBg) this.lowBg = document.createElement('canvas');
-    this.lowBg.width = QW; this.lowBg.height = QH;
     const mask = tiles.map((t) => (t === T_WALL || t === T_DOOR ? 1 : 0));
-    paintRoom(this.lowBg.getContext('2d'), B, mask, W, H, Math.round(TILE * PX), seed);
+    const tex = this.roomTexture(snap.biome, W, H, tiles, seed);
     g.imageSmoothingEnabled = false;
-    g.drawImage(this.lowBg, 0, 0);
+    g.drawImage(tex, 0, 0);
     // profondeur : les murs projettent une ombre sur le sol (plus forte sous le mur du haut)
     {
       const isW = (x, y) => x < 0 || y < 0 || x >= W || y >= H || mask[y * W + x] === 1;
@@ -463,6 +469,45 @@ export class Renderer {
     // tuiles de lave : lumières
     this.lavaLights = [];
     if (B.pitStyle === 'lava') for (let i = 0; i < tiles.length; i++) if (tiles[i] === T_PIT) this.lavaLights.push({ x: (i % W + 0.5) * TILE, y: (((i / W) | 0) + 0.5) * TILE });
+  }
+
+  // Texture du sol et des murs d'une salle : longue à peindre, donc gardée en mémoire
+  // (retour dans une salle, rocher cassé, passage secret qui s'ouvre...).
+  roomTexture(biome, W, H, tiles, seed) {
+    const B = BIOMES[biome] || BIOMES.castle;
+    const mask = tiles.map((t) => (t === T_WALL || t === T_DOOR ? 1 : 0));
+    this.texCache = this.texCache || new Map();
+    let mh = 0; for (let i = 0; i < mask.length; i++) mh = (mh * 31 + mask[i] * (i + 7)) | 0;
+    const tkey = `${biome}|${W}x${H}|${seed}|${mh}`;
+    let tex = this.texCache.get(tkey);
+    if (!tex) {
+      tex = document.createElement('canvas'); tex.width = Math.round(W * TILE * PX); tex.height = Math.round(H * TILE * PX);
+      paintRoom(tex.getContext('2d'), B, mask, W, H, Math.round(TILE * PX), seed);
+      this.texCache.set(tkey, tex);
+      if (this.texCache.size > 48) this.texCache.delete(this.texCache.keys().next().value);
+    }
+    return tex;
+  }
+
+  // Préparation en tâche de fond (quand le navigateur a du temps libre) : textures de toutes
+  // les salles de l'étage et sprites du boss, pour qu'il n'y ait pas d'à-coup en entrant.
+  warmFloor(rooms, biome, floor, bossId) {
+    const jobs = [];
+    for (const r of rooms) if (r.tiles) jobs.push(() => this.roomTexture(biome, r.W, r.H, r.tiles, r.gx * 31 + r.gy * 17 + floor * 101));
+    if (bossId && BOSSES[bossId]) {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 8;
+      const g = cv.getContext('2d'), g1 = cv.getContext('2d');
+      jobs.push(() => { g.pxk = PX; for (let f = 0; f < 4; f++) drawMonster(g, { t: bossId, b: 1, r: BOSSES[bossId].r, x: 4, y: 4, id: f }, f * 0.17, {}); });
+      jobs.push(() => { g.pxk = PX; for (let f = 0; f < 4; f++) drawMonster(g, { t: bossId, b: 1, r: BOSSES[bossId].r, x: 4, y: 4, id: f }, f * 0.17, { flash: 0.62, flashCol: '#ff3a3a' }); });
+      jobs.push(() => { delete g1.pxk; drawMonster(g1, { t: bossId, b: 1, r: 56, x: 4, y: 4, id: 0 }, this.t, {}); });
+    }
+    const idle = window.requestIdleCallback || ((f) => setTimeout(() => f({ timeRemaining: () => 8 }), 30));
+    const run = (dl) => {
+      // au moins une tâche par passage (même si le navigateur est occupé), puis tant qu'il reste du temps libre
+      do { try { jobs.shift()(); } catch { /* ignore */ } } while (jobs.length && dl.timeRemaining() > 4);
+      if (jobs.length) idle(run, { timeout: 400 });
+    };
+    idle(run, { timeout: 400 });
   }
 
   cellDeco(t, B, seed, roomType, main) {
@@ -1184,7 +1229,7 @@ export class Renderer {
       } else if (kind === 'shock') {
         c.strokeStyle = '#e8d8b0'; c.lineWidth = 6; c.globalAlpha = 0.8 * fade;
         c.beginPath(); c.ellipse(x, y, r, r * 0.8, 0, 0, TAU); c.stroke();
-        c.strokeStyle = '#8a7a5a'; c.lineWidth = 2; c.beginPath(); c.ellipse(x, y, r - 5, (r - 5) * 0.8, 0, 0, TAU); c.stroke();
+        if (r > 6) { c.strokeStyle = '#8a7a5a'; c.lineWidth = 2; c.beginPath(); c.ellipse(x, y, r - 5, (r - 5) * 0.8, 0, 0, TAU); c.stroke(); }
         c.globalAlpha = 1;
         if (Math.random() < 0.5) { const a = Math.random() * TAU; this.parts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r * 0.8, vx: 0, vy: -60, life: 0.4, max: 0.4, color: '#a89a80', size: 3, g: 200 }); }
       } else if (kind === 'meteor' || kind === 'pmeteor') {
@@ -1565,7 +1610,10 @@ export class Renderer {
     if (!this.trans && this.zoomK <= 0.004 && !this.showMap) this.drawWorldTexts(H, shx / PX - cx, shy / PX - cy);
     this.drawHUD(H, snap, me, meId, dt, extra, B);
     if (this.vs) this.drawVersus(H, me, dt);
-    pixelize(H, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
+    // passe pixel seulement là où il y a de l'interface (bords de l'écran) ; tout l'écran quand
+    // la grande carte ou la carte « VS » sont affichées
+    if (this.showMap || this.vs) pixelize(H, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
+    else for (const [x, y, w, h] of [[0, 0, VIEW_W, 84], [VIEW_W - 160, 84, 160, 70], [0, 226, 104, VIEW_H - 226 - 62], [0, VIEW_H - 62, VIEW_W, 62]]) pixelize(H, w, h, { outline: true, solid: 0.5, dither: false, x, y });
     if (this.showMap) { m.fillStyle = 'rgba(8,5,14,0.72)'; m.fillRect(0, 0, SW, SH); }
     m.drawImage(this.hud, 0, 0, SW, SH);
     m.drawImage(this.txtH, 0, 0, SW, SH);
