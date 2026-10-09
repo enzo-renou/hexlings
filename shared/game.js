@@ -386,6 +386,19 @@ export class Game {
     return { x, y };
   }
 
+  // un objet par joueur (salle au trésor, boss) : le piédestal porte le pseudo de son propriétaire
+  ownedItems(room, owners, pool, cx, cy, options) {
+    const list = [];
+    for (const p of owners) {
+      const n = options && p.talents.options ? 2 : 1;
+      for (let i = 0; i < n; i++) list.push({ item: this.rollItem(pool), owner: p.id, group: 'own' + p.id });
+    }
+    const step = list.length > 5 ? 74 : 90;
+    list.forEach((ex, i) => room.pickups.push(this.makePickup('item', cx + (i - (list.length - 1) / 2) * step, cy, ex, room)));
+  }
+
+  ownerPresent(id) { const o = this.players.find((q) => q.id === id); return !!o && !o.away; }
+
   populate(room) {
     room.populated = true;
     const { x: cx, y: cy } = roomCenter(room);
@@ -395,9 +408,12 @@ export class Game {
       // parfois un coffre piégé (mimique) à partir de l'étage 3
       room.mimic = this.floor >= 3 && this.rng.chance(0.05);
     } else if (room.type === 'treasure') {
-      const n = Math.min(5, this.players.length + (this.players.some((p) => p.talents.options) ? 1 : 0));
-      for (let i = 0; i < n; i++) add('item', cx + (i - (n - 1) / 2) * 90, cy, { item: this.rollItem('treasure'), group: 'tr' });
-      room.takenBy = [];
+      const owners = this.players.filter((p) => !p.away);
+      if (owners.length <= 1) {
+        const n = 1 + (this.players.some((p) => p.talents.options) ? 1 : 0);
+        for (let i = 0; i < n; i++) add('item', cx + (i - (n - 1) / 2) * 90, cy, { item: this.rollItem('treasure'), group: 'tr' });
+        room.takenBy = [];
+      } else this.ownedItems(room, owners, 'treasure', cx, cy, true);
     } else if (room.type === 'shop') {
       const price = 15 + this.floor;
       const goods = [
@@ -1280,7 +1296,9 @@ export class Game {
     }
     this.room.trapdoor = { x: cx, y: cy + 10 };
     this.trapdoor = this.room.trapdoor;
-    this.room.pickups.push(this.makePickup('item', cx, cy - 80, { item: this.rollItem('boss') }));
+    const owners = this.players.filter((p) => !p.away);
+    if (owners.length <= 1) this.room.pickups.push(this.makePickup('item', cx, cy - 80, { item: this.rollItem('boss') }));
+    else this.ownedItems(this.room, owners, 'boss', cx, cy - 80, false);
     this.room.pickups.push(this.makePickup(this.hard && this.rng.chance(0.5) ? 'soul' : 'heart', cx - 90, cy + 10));
     if (!this.hard || this.rng.chance(0.5)) this.room.pickups.push(this.makePickup('heart', cx + 90, cy + 10));
   }
@@ -1544,6 +1562,7 @@ export class Game {
         const price = pk.price ? Math.max(1, pk.price - p.discount) : 0;
         if (price && p.coins < price) continue;
         if (pk.group && room.takenBy && room.takenBy.includes(p.id)) continue;
+        if (pk.owner != null && pk.owner !== p.id && this.ownerPresent(pk.owner)) continue;
         switch (pk.kind) {
           case 'coin': {
             const v = p.flags.greed ? 2 : 1;
@@ -1593,6 +1612,7 @@ export class Game {
           }
           case 'item': {
             const it = ITEMS[pk.item];
+            const grp = pk.group;
             p.coins -= price;
             if (it.active) {
               const old = p.active;
@@ -1605,7 +1625,9 @@ export class Game {
               pk.taken = true;
               this.givePassive(p, pk.item);
             }
-            if (pk.group && room.takenBy) {
+            if (pk.owner != null && grp) {
+              for (const o of room.pickups) if (o !== pk && o.group === grp && !o.taken) { o.taken = true; this.emit({ k: 'poof', x: o.x, y: o.y - 20, c: 'pixie' }); }
+            } else if (pk.group && room.takenBy) {
               room.takenBy.push(p.id);
               const need = this.alive().length;
               if (room.takenBy.length >= need) for (const o of room.pickups) if (o.group === pk.group && !o.taken) { o.taken = true; this.emit({ k: 'poof', x: o.x, y: o.y - 20, c: 'pixie' }); }
@@ -1931,7 +1953,7 @@ export class Game {
       pbeams: this.pbeams.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.ang * 100) / 100, Math.round(b.len), b.w, r1(b.life / b.dur), b.c]),
       ebeams: this.ebeams.map((b) => [b.id, r1(b.x), r1(b.y), Math.round(b.ang * 100) / 100, Math.round(b.len), b.w, b.t < b.warn ? 0 : 1, b.c, r1(b.t)]),
       hazards: this.hazards.map((h) => [h.id, h.kind, r1(h.x), r1(h.y), r1(h.r), h.warn > 0 ? r1(h.warn) : 0, h.c || '', r1(h.t), r1(h.life)]),
-      pickups: room.pickups.map((pk) => ({ id: pk.id, k: pk.kind, x: Math.round(pk.x), y: Math.round(pk.y), item: pk.item, price: pk.price, g: pk.group ? 1 : 0, orb: pk.orb, pot: pk.potion ? [this.potionColor[pk.potion], this.knownPotions.has(pk.potion) ? pk.potion : null] : null })),
+      pickups: room.pickups.map((pk) => ({ id: pk.id, k: pk.kind, x: Math.round(pk.x), y: Math.round(pk.y), item: pk.item, price: pk.price, g: pk.group ? 1 : 0, o: pk.owner ?? null, orb: pk.orb, pot: pk.potion ? [this.potionColor[pk.potion], this.knownPotions.has(pk.potion) ? pk.potion : null] : null })),
       bombs: this.bombs.map((b) => [b.id, Math.round(b.x), Math.round(b.y), Math.round(b.t * 10) / 10, b.big ? 1 : 0]),
       spikes: this.spikesUp(),
       diff: this.difficulty, daily: this.daily,

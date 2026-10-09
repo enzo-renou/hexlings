@@ -282,3 +282,4 @@ table.lb tr.me td { color: var(--gold); }
 .marks .mk.on { color: var(--text); }
 .marks .mk.on.hard { color: #ff6a7a; }
 .marks .mk.on.hardcore { color: #ffd34a; }
+.check select { margin-left: 8px; background: #0e0916; color: var(--text); border: 2px solid #3a2a4a; font: inherit; padding: 2px 6px; }

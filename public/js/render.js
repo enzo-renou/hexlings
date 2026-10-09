@@ -81,6 +81,7 @@ export class Renderer {
     this.ovl = mk(VIEW_W, VIEW_H, true);
     this.lctx = this.light.ctx;
     this.shakeOn = true;
+    this.highlight = 'arrow'; // mise en valeur de son sorcier en multi : off | ring | arrow
     this.camX = 0; this.camY = 0;
     this.reset();
   }
@@ -685,9 +686,18 @@ export class Renderer {
       glow(c, pk.x, pk.y - 22 + bob, 26, '#ffe696', 0.5);
       c.save(); c.translate(pk.x, pk.y - 22 + bob); c.scale(sc, sc); drawItemIcon(c, pk.item, 0, 0, 30); c.restore();
       lights.push({ x: pk.x, y: pk.y - 20, r: 60, c: '#ffe08a', a: 0.7 });
+      let oy = 0;
+      const owner = pk.o != null && this.snapPlayers && this.snapPlayers.length > 1 ? this.snapPlayers.find((q) => q.id === pk.o) : null;
+      if (owner) {
+        const mine = owner.id === this.meId;
+        const col = CHARACTERS[owner.c]?.shot || '#ffffff';
+        c.fillStyle = col; roundRect(c, pk.x - 18, pk.y - 6, 36, 3, 1); c.fill();   // liseré à la couleur du joueur
+        this.texts.push({ x: pk.x, y: pk.y + 30, text: mine ? `${owner.name} (toi)` : owner.name, color: mine ? '#ffe08a' : col, size: 12, box: true });
+        oy = 16;
+      }
       if (me && Math.hypot(me.x - pk.x, me.y - pk.y) < 90) {
-        this.texts.push({ x: pk.x, y: pk.y + 36, text: ITEMS[pk.item].name, color: '#ffe08a', size: 13, box: true });
-        this.texts.push({ x: pk.x, y: pk.y + 52, text: ITEMS[pk.item].desc, color: '#d8d0e8', size: 11, box: true });
+        this.texts.push({ x: pk.x, y: pk.y + 36 + oy, text: ITEMS[pk.item].name, color: '#ffe08a', size: 13, box: true });
+        this.texts.push({ x: pk.x, y: pk.y + 52 + oy, text: owner && owner.id !== this.meId && !owner.away ? `Réservé à ${owner.name}` : ITEMS[pk.item].desc, color: owner && owner.id !== this.meId && !owner.away ? '#ff9a8a' : '#d8d0e8', size: 11, box: true });
       }
     } else if (pk.k === 'coin') {
       shadow(7, 2.5, 8);
@@ -779,6 +789,19 @@ export class Renderer {
     }
     if (p.hs && Math.random() < 0.5) this.parts.push({ x: p.x + (Math.random() - 0.5) * 16, y: p.y + 6, vx: -p.vx * 0.3, vy: -p.vy * 0.3, life: 0.3, max: 0.3, color: '#bbffff', size: 2 });
     if (p.rb && Math.random() < 0.3) this.parts.push({ x: p.x + (Math.random() - 0.5) * 20, y: p.y - 20, vx: 0, vy: -30, life: 0.5, max: 0.5, color: '#ffb347', size: 2, glow: true });
+    const hl = isMe && showName && !p.dead && desc <= 0 ? this.highlight : 'off';
+    if (hl !== 'off') {
+      const pulse = 0.65 + Math.sin(this.t * 5) * 0.25;
+      c.save();
+      c.globalAlpha = 0.25 + pulse * 0.3; c.fillStyle = ch.shot;
+      c.beginPath(); c.ellipse(p.x, p.y + 12, 23, 9, 0, 0, TAU); c.fill();
+      c.globalAlpha = 1; c.strokeStyle = ch.shot; c.lineWidth = 3;
+      c.beginPath(); c.ellipse(p.x, p.y + 12, 23, 9, 0, 0, TAU); c.stroke();
+      c.globalAlpha = pulse; c.strokeStyle = '#ffffff'; c.lineWidth = 1.5;
+      c.beginPath(); c.ellipse(p.x, p.y + 12, 26 + pulse * 2, 11 + pulse, 0, 0, TAU); c.stroke();
+      c.restore();
+      lights.push({ x: p.x, y: p.y + 8, r: 60, c: ch.shot, a: 0.6 });
+    }
     let scale = 1, rot = 0, alpha = p.dead ? 0.35 : p.away ? 0.4 : 1;
     if (desc > 0) { scale = Math.max(0.05, 1 - desc); rot = desc * TAU * 1.5; alpha *= 1 - desc * 0.5; }
     const hoverY = p.fly && !p.dead ? -6 + Math.sin(this.t * 3) * 2 : 0;
@@ -828,9 +851,16 @@ export class Renderer {
     if (p.em) {
       const E = EMOTES[p.em[0]] || EMOTES[0];
       const pop = Math.min(1, (2.6 - p.em[1]) * 6);
-      this.texts.push({ x: p.x, y: p.y - 60 - (1 - pop) * 10, text: E.t, color: E.c, size: 20, bubble: true });
+      this.texts.push({ x: p.x, y: p.y - (hl === 'arrow' ? 80 : 60) - (1 - pop) * 10, text: E.t, color: E.c, size: 20, bubble: true });
     }
-    if (showName) this.texts.push({ x: p.x, y: p.y - 42, text: p.name, color: isMe ? '#ffe08a' : '#ffffff', size: 12 });
+    if (showName) this.texts.push({ x: p.x, y: p.y - (hl === 'arrow' ? 62 : 42), text: p.name, color: isMe ? '#ffe08a' : '#ffffff', size: 12 });
+    if (hl === 'arrow') {
+      const ay = p.y - 54 + Math.sin(this.t * 6) * 2;
+      c.fillStyle = '#140c1c'; c.beginPath(); c.moveTo(p.x - 11, ay - 5); c.lineTo(p.x + 11, ay - 5); c.lineTo(p.x, ay + 9); c.closePath(); c.fill();
+      c.fillStyle = ch.shot; c.beginPath(); c.moveTo(p.x - 8, ay - 3); c.lineTo(p.x + 8, ay - 3); c.lineTo(p.x, ay + 6); c.closePath(); c.fill();
+      c.fillStyle = '#ffffff'; c.fillRect(p.x - 5, ay - 3, 6, 1.5);
+      lights.push({ x: p.x, y: ay, r: 30, c: ch.shot, a: 0.6 });
+    }
     if (p.dead) this.texts.push({ x: p.x, y: p.y + 28, text: p.rp > 0 ? `réanimation ${Math.round(p.rp * 100)}%` : 'fantôme', color: p.rp > 0 ? '#8aff9a' : '#cccccc', size: 11 });
     if (p.dead && p.rp > 0) { c.strokeStyle = '#8aff9a'; c.lineWidth = 4; c.beginPath(); c.arc(p.x, p.y - 4, 24, -Math.PI / 2, -Math.PI / 2 + p.rp * TAU); c.stroke(); }
     if (p.away) this.texts.push({ x: p.x, y: p.y - 56, text: 'déconnecté...', color: '#aaaaaa', size: 11 });
@@ -1133,6 +1163,7 @@ export class Renderer {
     const key = `${snap.floor}:${snap.room.id}:${snap.biome}:${snap.room.W}x${snap.room.H}`;
     if (key !== this.bgKey) { this.buildBg(snap); this.bgKey = key; }
     const me = snap.players.find((p) => p.id === meId) || snap.players[0];
+    this.snapPlayers = snap.players; this.meId = meId;
     this.updateCamera(snap, me, dt);
     for (const [k, v] of this.cast) { const n = v - dt; if (n <= 0) this.cast.delete(k); else this.cast.set(k, n); }
     for (const [k, v] of this.hold) { v.t -= dt; if (v.t <= 0) this.hold.delete(k); }

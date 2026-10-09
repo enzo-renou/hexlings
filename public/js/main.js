@@ -32,6 +32,7 @@ audio.setVolumes(S0.sfx, S0.music);
 input.setBindings(S0.keys);
 input.setPad(S0.pad);
 renderer.shakeOn = S0.shake !== false;
+renderer.highlight = S0.highlight || 'arrow';
 document.documentElement.style.setProperty('--stone', `url(${menuTexture()})`);
 function refreshKeyNames() {
   const b = input.bind;
@@ -589,6 +590,7 @@ function openSettings() {
   $('#vol-sfx').value = Math.round(st.sfx * 100);
   $('#vol-music').value = Math.round(st.music * 100);
   $('#opt-shake').checked = st.shake !== false;
+  $('#opt-highlight').value = st.highlight || 'arrow'; renderer.highlight = st.highlight || 'arrow';
   renderKeys();
   renderPad();
   const snap = lastSnap;
@@ -806,6 +808,7 @@ $('#btn-settings').onclick = () => { audio.unlock(); togglePause(); };
 $('#vol-sfx').oninput = (e) => { meta.data.settings.sfx = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
 $('#vol-sfx').onchange = () => audio.play('coin');
 $('#vol-music').oninput = (e) => { meta.data.settings.music = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
+$('#opt-highlight').onchange = (e) => { meta.data.settings.highlight = e.target.value; renderer.highlight = e.target.value; meta.save(); };
 $('#opt-shake').onchange = (e) => { meta.data.settings.shake = e.target.checked; renderer.shakeOn = e.target.checked; meta.save(); };
 $('#btn-keys-reset').onclick = () => { input.setBindings(DEFAULT_KEYS); meta.data.settings.keys = {}; meta.save(); refreshKeyNames(); renderKeys(); };
 $('#btn-pad-reset').onclick = () => { input.setPad(DEFAULT_PAD); meta.data.settings.pad = {}; meta.save(); renderPad(); };

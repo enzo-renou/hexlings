@@ -207,6 +207,33 @@ const standOn = (p, d) => { p.x = (d.tx + 0.5) * TILE; p.y = (d.ty + 0.5) * TILE
   g.requestEmote('a', 1); g.step(DT);
   ok(g.snapshot().players[0].em?.[0] === 1, 'émote affichée au-dessus du joueur');
 }
+// --- multi : un objet par joueur au trésor et au boss, réservé à son propriétaire
+{
+  const g = new Game({ seed: 12, players: [{ id: 'a', charId: 'pyra' }, { id: 'b', charId: 'volt' }, { id: 'c', charId: 'sylva' }] });
+  g.startFloor(1);
+  const tr = g.fl.rooms.find((r) => r.type === 'treasure');
+  g.enterRoom(tr, null);
+  const items = g.room.pickups.filter((pk) => pk.kind === 'item');
+  ok(items.length === 3 && new Set(items.map((pk) => pk.owner)).size === 3, `salle au trésor : un objet par joueur (${items.length})`);
+  const [a, b] = g.players;
+  for (const p of g.players) p.iframes = 99;
+  const forB = items.find((pk) => pk.owner === 'b');
+  a.x = forB.x; a.y = forB.y; b.x = 60; b.y = 60; g.players[2].x = 60; g.players[2].y = 90;
+  g.step(DT);
+  ok(!forB.taken, 'un joueur ne peut pas prendre l’objet réservé à un autre');
+  ok(g.snapshot().pickups.find((q) => q.id === forB.id).o === 'b', 'le pseudo du propriétaire est envoyé avec le piédestal');
+  b.x = forB.x; b.y = forB.y; a.x = 60; a.y = 120; g.step(DT);
+  ok(forB.taken, 'le propriétaire prend son objet');
+  ok(items.filter((pk) => pk !== forB).every((pk) => !pk.taken), 'les objets des autres restent en place');
+  const forC = items.find((pk) => pk.owner === 'c');
+  g.setAway('c', true); a.x = forC.x; a.y = forC.y; g.step(DT);
+  ok(forC.taken, 'si le propriétaire est déconnecté, un autre peut prendre son objet');
+  g.setAway('c', false);
+  g.startFloor(2); g.enterRoom(g.fl.boss, null);
+  const boss = g.enemies.find((e) => e.boss); g.damageEnemy(boss, 1e6, null); for (let i = 0; i < 30; i++) g.step(DT);
+  const bi = g.room.pickups.filter((pk) => pk.kind === 'item');
+  ok(bi.length === 3 && bi.every((pk) => pk.owner), `boss : un objet par joueur (${bi.length})`);
+}
 // --- champions et mode difficile
 {
   const g = solo(4, 'pyra', { difficulty: 'hard' });

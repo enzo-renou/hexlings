@@ -21,7 +21,7 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
   - En multi, la vie des boss augmente avec le nombre de joueurs : plus on est, plus c'est dur. Plusieurs joueurs peuvent prendre le même sorcier.
 - **Marques de victoire** sur la carte de chaque sorcier : une croix par mode gagné (Normal, Difficile en rouge, Hardcore), et la carte du sorcier prend un cadre rouge après une victoire en Difficile.
 - **Solaris**, nouveau mage : rayon jaune à courte portée. Se débloque en gagnant en Difficile avec Volt.
-- **Multijoueur** jusqu'à 4 : tout le monde sur la même porte pour avancer, réanimer un allié, rejoindre une partie en cours, reconnexion (90 s), ping, **émotes** et prédiction de mouvement.
+- **Multijoueur** jusqu'à 4 : **un objet par joueur** dans les salles au trésor et après chaque boss (le pseudo est écrit sous le piédestal, les autres ne peuvent pas le prendre ; si son propriétaire est déconnecté, il est libre), option **« Mettre mon sorcier en valeur »** (anneau + flèche, dans ⚙ Paramètres → Affichage), tout le monde sur la même porte pour avancer, réanimer un allié, rejoindre une partie en cours, reconnexion (90 s), ping, **émotes** et prédiction de mouvement.
 
 ## Progression
 
