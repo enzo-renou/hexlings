@@ -11,7 +11,8 @@ function fresh() {
   return {
     v: 1, name: '', runs: 0, wins: 0, deaths: 0, bestFloor: 0, kills: 0,
     unlocked: [...DEFAULT_UNLOCKED], relics: {}, equipped: [], seen: [], lastChar: 'pyra', muted: false,
-    settings: { sfx: 0.8, music: 0.6, shake: true, keys: {} },
+    settings: { sfx: 0.8, music: 0.6, shake: true, keys: {}, pad: {} },
+    marks: {}, // marques de victoire par sorcier : { pyra: { normal: 1, hard: 1, hardcore: 1 } }
     shards: 0, talents: {}, achievements: [], seenEnemies: [], seenBosses: [],
     stats: { poop: 0, secrets: 0, winChars: [], bestScore: 0 },
     difficulty: 'normal', introSeen: false, daily: { day: null, done: false },
@@ -20,7 +21,7 @@ function fresh() {
 }
 function deep(d) {
   const f = fresh();
-  return { ...f, ...d, settings: { ...f.settings, ...(d.settings || {}) }, stats: { ...f.stats, ...(d.stats || {}) }, daily: { ...f.daily, ...(d.daily || {}) } };
+  return { ...f, ...d, settings: { ...f.settings, ...(d.settings || {}) }, stats: { ...f.stats, ...(d.stats || {}) }, daily: { ...f.daily, ...(d.daily || {}) }, marks: { ...(d.marks || {}) } };
 }
 const uniq = (a) => [...new Set(a)];
 
@@ -66,6 +67,11 @@ export const meta = {
     this.save();
     return { id, lvl };
   },
+  mark(charId, diff) {
+    this.data.marks[charId] = { ...(this.data.marks[charId] || {}), [diff]: 1 };
+    this.save();
+  },
+  hardcoreUnlocked() { return Object.values(this.data.marks).some((m) => m.hard || m.hardcore); },
   unlock(charId) {
     if (this.data.unlocked.includes(charId)) return false;
     this.data.unlocked.push(charId);
@@ -133,6 +139,7 @@ export const meta = {
       achievements: uniq([...a.achievements, ...b.achievements]), seenEnemies: uniq([...a.seenEnemies, ...b.seenEnemies]), seenBosses: uniq([...a.seenBosses, ...b.seenBosses]),
       stats: { poop: Math.max(a.stats.poop, b.stats.poop), secrets: Math.max(a.stats.secrets, b.stats.secrets), winChars: uniq([...a.stats.winChars, ...b.stats.winChars]), bestScore: Math.max(a.stats.bestScore, b.stats.bestScore) },
       equipped: a.equipped.length ? a.equipped : b.equipped,
+      marks: (() => { const m = { ...a.marks }; for (const [c, v] of Object.entries(b.marks || {})) m[c] = { ...(m[c] || {}), ...v }; return m; })(),
     };
   },
   async api(path, opts = {}) {

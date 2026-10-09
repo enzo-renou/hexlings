@@ -50,7 +50,9 @@
             <div class="diff" id="diff">
               <button data-diff="normal" class="seg on">Normal</button>
               <button data-diff="hard" class="seg">Difficile</button>
+              <button data-diff="hardcore" class="seg hc">Hardcore</button>
             </div>
+            <p id="diff-hint" class="hint small diffhint"></p>
             <button id="btn-solo" class="btn primary">▶ Jouer en solo</button>
             <button id="btn-daily" class="btn">📅 Défi du jour</button>
             <div class="sep"><span>multijoueur</span></div>
@@ -90,9 +92,11 @@
             <div class="diff" id="lobby-diff">
               <button data-diff="normal" class="seg on">Normal</button>
               <button data-diff="hard" class="seg">Difficile</button>
+              <button data-diff="hardcore" class="seg hc">Hardcore</button>
               <button data-diff="daily" class="seg">Défi du jour</button>
             </div>
-            <span class="hint small">On peut aussi rejoindre une partie déjà lancée.</span>
+            <span id="lobby-diff-note" class="hint small"></span>
+            <span class="hint small">On peut aussi rejoindre une partie déjà lancée, et plusieurs joueurs peuvent prendre le même sorcier.</span>
           </div>
           <h3>Ton sorcier</h3>
           <div id="lobby-chars" class="chars small"></div>
@@ -120,6 +124,11 @@
           <table id="keys-table" class="keys"></table>
           <p class="hint small">Manette : stick gauche = bouger · stick droit ou A/B/X/Y = tirer · RB/RT = sort · LB = bombe · LT = signaler · croix haut (maintenir) = carte · Select = inventaire · Start = paramètres. Dans les menus : croix/stick pour se déplacer, A pour valider, B pour revenir.</p>
           <button id="btn-keys-reset" class="btn small">Touches par défaut</button>
+        </section>
+        <section>
+          <h3>Manette <small class="hint">— clique puis appuie sur un bouton de la manette</small></h3>
+          <table id="pad-table" class="keys"></table>
+          <button id="btn-pad-reset" class="btn small">Manette par défaut (comme Isaac)</button>
         </section>
         <section>
           <h3>Affichage</h3>
@@ -202,6 +211,7 @@
         <div class="tabs" id="lb-tabs">
           <button data-mode="normal" class="seg on">Normal</button>
           <button data-mode="hard" class="seg">Difficile</button>
+          <button data-mode="hardcore" class="seg hc">Hardcore</button>
           <button data-mode="daily" class="seg">Défi du jour</button>
         </div>
         <table class="lb"><thead><tr><th>#</th><th>Sorcier</th><th>Score</th><th>Étage</th><th>Temps</th></tr></thead><tbody id="lb-body"></tbody></table>

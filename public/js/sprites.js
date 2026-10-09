@@ -533,23 +533,35 @@ export function drawEnemyBody(ctx, look, x, y, r, e, t, L, flash = 0, flashCol =
 
 // ============================================================ OBSTACLES DESTRUCTIBLES
 export function drawPoop(ctx, cx, cy, hp, gold, t) {
-  const base = gold ? '#e8b830' : '#7a4a22', dark = gold ? '#a87a10' : '#552f12', hi = gold ? '#fff2a0' : '#a06a3a';
-  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ellipse(ctx, cx, cy + 15, 18, 6);
-  const tiers = Math.max(1, hp);
-  const sizes = [[18, 9, 10], [13, 8, 0], [8, 6, -9]];
-  for (let i = 0; i < tiers; i++) {
-    const [w, h, oy] = sizes[i];
-    ctx.fillStyle = dark; ellipse(ctx, cx, cy + oy + 2, w, h);
-    ctx.fillStyle = base; ellipse(ctx, cx, cy + oy, w, h);
-    ctx.fillStyle = hi; ellipse(ctx, cx - w * 0.35, cy + oy - h * 0.35, w * 0.25, h * 0.25);
+  // pile de livres destructible (dorée = livres d'or qui donnent des pièces)
+  const pal = gold ? [['#e8b830', '#a87a10', '#fff2a0']] :
+    [['#8a2a3a', '#541824', '#c05060'], ['#2a4a8a', '#182c54', '#5a7ac8'], ['#2a6a3a', '#163a20', '#5aa86a'], ['#6a3a8a', '#3a1e54', '#9a6ac0'], ['#8a5a2a', '#543414', '#c08a50']];
+  const seed = Math.floor(cx * 7 + cy * 13);
+  ctx.fillStyle = 'rgba(0,0,0,0.32)'; ellipse(ctx, cx, cy + 16, 20, 6);
+  const n = Math.max(1, Math.min(4, hp + 1));
+  let y = cy + 14;
+  for (let i = 0; i < n; i++) {
+    const w = 34 - i * 3 - ((seed >> i) & 3) * 2, h = 7;
+    const ox = (((seed >> (i * 2)) & 7) - 3.5) * 1.1;
+    const [c0, c1, c2] = pal[(seed + i * 3) % pal.length];
+    const x = Math.round(cx + ox - w / 2), yy = Math.round(y - h);
+    ctx.fillStyle = '#1a1018'; ctx.fillRect(x - 1, yy - 1, w + 2, h + 2);      // contour
+    ctx.fillStyle = c1; ctx.fillRect(x, yy, w, h);                               // couverture
+    ctx.fillStyle = c0; ctx.fillRect(x, yy, w, h - 2);
+    ctx.fillStyle = '#efe4c8'; ctx.fillRect(x + 3, yy + 2, w - 5, h - 4);        // tranche des pages
+    ctx.fillStyle = '#c8b898'; ctx.fillRect(x + 3, yy + h - 3, w - 5, 1);
+    ctx.fillStyle = c2; ctx.fillRect(x, yy, w, 1); ctx.fillRect(x, yy, 2, h);    // reflet
+    ctx.fillStyle = gold ? '#fff8d0' : '#e8c060'; ctx.fillRect(x + 1, yy + 2, 1, 2); // fermoir
+    y -= h + 1;
   }
-  if (tiers === 3) { ctx.fillStyle = base; ctx.beginPath(); ctx.moveTo(cx - 3, cy - 13); ctx.quadraticCurveTo(cx + 2, cy - 22, cx + 5, cy - 14); ctx.fill(); }
-  // mouches (ou étincelles pour la dorée)
-  for (let i = 0; i < 2; i++) {
+  if (n >= 3 && !gold) { // un livre ouvert posé en haut
+    ctx.fillStyle = '#1a1018'; ctx.fillRect(cx - 9, y - 3, 18, 6);
+    ctx.fillStyle = '#f4ead0'; ctx.fillRect(cx - 8, y - 2, 7, 4); ctx.fillRect(cx + 1, y - 2, 7, 4);
+    ctx.fillStyle = '#9a8a70'; ctx.fillRect(cx - 6, y - 1, 4, 1); ctx.fillRect(cx + 3, y - 1, 4, 1);
+  }
+  if (gold) for (let i = 0; i < 2; i++) {
     const a = t * (3 + i) + i * 2;
-    const fx = cx + Math.cos(a) * 16, fy = cy - 14 + Math.sin(a * 1.7) * 6;
-    if (gold) { ctx.fillStyle = '#fff'; star(ctx, fx, fy, 2.5, 4, 0.4); }
-    else { ctx.fillStyle = '#111'; circle(ctx, fx, fy, 1.4); ctx.fillStyle = 'rgba(255,255,255,0.5)'; circle(ctx, fx + 1, fy - 1, 0.9); }
+    ctx.fillStyle = '#fff'; star(ctx, cx + Math.cos(a) * 16, y - 4 + Math.sin(a * 1.7) * 6, 2.5, 4, 0.4);
   }
 }
 
@@ -557,6 +569,7 @@ const FIRE_COL = {
   orange: ['#ff4a1a', '#ff9a2a', '#fff1a0'],
   blue: ['#2a6aff', '#5ad1ff', '#e8fbff'],
   purple: ['#8a2aff', '#d05aff', '#ffe0ff'],
+  green: ['#2a8a2a', '#7ae05a', '#eaffd0'],
 };
 export function fireColor(kind) { return (FIRE_COL[kind] || FIRE_COL.orange)[1]; }
 export function drawFire(ctx, cx, cy, hp, kind, t, seed = 0) {

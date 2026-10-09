@@ -87,7 +87,7 @@ app.post('/api/score', async (req, res) => {
   if (limited(req, 20)) return res.status(429).json({ error: 'Trop de scores' });
   const u = await auth(req);
   const b = req.body || {};
-  const mode = ['normal', 'hard', 'daily'].includes(b.mode) ? b.mode : 'normal';
+  const mode = ['normal', 'hard', 'hardcore', 'daily'].includes(b.mode) ? b.mode : 'normal';
   const name = u ? u.name : String(b.name || 'Anonyme').trim().slice(0, 16) || 'Anonyme';
   const s = {
     name, guest: !u, mode, day: mode === 'daily' ? todayKey() : null,
@@ -101,7 +101,7 @@ app.post('/api/score', async (req, res) => {
 });
 
 app.get('/api/leaderboard', async (req, res) => {
-  const mode = ['normal', 'hard', 'daily'].includes(req.query.mode) ? req.query.mode : 'normal';
+  const mode = ['normal', 'hard', 'hardcore', 'daily'].includes(req.query.mode) ? req.query.mode : 'normal';
   const day = mode === 'daily' ? todayKey() : null;
   const rows = await store.top(mode, day, 20);
   res.json({ mode, day, rows: rows.map((r) => ({ name: r.name, guest: r.guest, score: r.score, floor: r.floor, time: r.time, won: r.won, char: r.char })) });
@@ -185,7 +185,7 @@ io.on('connection', (socket) => {
     const pid = crypto.randomBytes(6).toString('hex');
     const secret = crypto.randomBytes(12).toString('hex');
     const p = { ...cleanPlayer(pid, data), secret };
-    const l = { code, host: pid, players: [p], game: null, difficulty: data?.difficulty === 'hard' ? 'hard' : 'normal', daily: !!data?.daily };
+    const l = { code, host: pid, players: [p], game: null, difficulty: ['hard', 'hardcore'].includes(data?.difficulty) ? data.difficulty : 'normal', daily: !!data?.daily };
     lobbies.set(code, l);
     attach(socket, l, p);
     ack?.({ ok: true, lobby: lobbyInfo(l), you: pid, secret });
@@ -232,7 +232,7 @@ io.on('connection', (socket) => {
     if (!p) return;
     Object.assign(p, cleanPlayer(p.id, { ...p, ...data }));
     if (l.host === p.id && data) {
-      if (data.difficulty) l.difficulty = data.difficulty === 'hard' ? 'hard' : 'normal';
+      if (data.difficulty) l.difficulty = ['hard', 'hardcore'].includes(data.difficulty) ? data.difficulty : 'normal';
       if (data.daily != null) l.daily = !!data.daily;
     }
     broadcastLobby(l);
@@ -258,6 +258,9 @@ io.on('connection', (socket) => {
   socket.on('spell', withGame((g, pid) => g.requestSpell(pid)));
   socket.on('bomb', withGame((g, pid) => g.requestBomb(pid)));
   socket.on('mark', withGame((g, pid) => g.requestPing(pid)));
+  socket.on('orb', withGame((g, pid) => g.requestOrb(pid)));
+  socket.on('potion', withGame((g, pid) => g.requestPotion(pid)));
+  socket.on('emote', withGame((g, pid, n) => g.requestEmote(pid, n)));
 
   socket.on('backToLobby', () => {
     const l = lobbies.get(socket.data.code);
@@ -281,7 +284,11 @@ setInterval(() => {
     l.acc += Math.min(250, now - l.last) / 1000;
     l.last = now;
     while (l.acc >= DT) { g.step(DT); l.acc -= DT; }
-    io.to(l.code).emit('snap', g.snapshot());
+    const snap = g.snapshot();
+    // les tuiles et la carte ne changent pas souvent : on ne les renvoie que si besoin (ou toutes les 2 s)
+    const full = snap.roomVer !== l.sentVer || now - (l.sentT || 0) > 2000;
+    if (full) { l.sentVer = snap.roomVer; l.sentT = now; } else { delete snap.room.tiles; delete snap.map; }
+    io.to(l.code).emit('snap', snap);
     if (g.state !== 'playing') l.ended = true;
   }
 }, 1000 / 30);

@@ -211,60 +211,84 @@ function voidTex(d, w, x0, y0, x1, y1, base, seed) {
 }
 
 // ------------------------------------------------------------ fond complet d'une salle (en pixels)
-export function paintRoom(ctx, B, tiles, W, H, T, roomW, roomH, seed) {
-  const img = ctx.createImageData(W, H);
+// tiles : tableau W x H (1 = mur). T : taille d'une tuile en pixels (basse résolution).
+export function paintRoom(ctx, B, tiles, W, H, T, seed) {
+  const PW = W * T, PH = H * T;
+  const img = ctx.createImageData(PW, PH);
   const d = img.data;
   const fb = rgb(B.floor);
-  const ix0 = T, iy0 = T, ix1 = W - T, iy1 = H - T;
+  const isWall = (x, y) => x < 0 || y < 0 || x >= W || y >= H || tiles[y * W + x] === 1;
   switch (B.deco) {
-    case 'forest': grass(d, W, 0, 0, W, H, fb, seed); break;
-    case 'graveyard':
-      cobble(d, W, 0, 0, W, H, rgb('#4a4f4c'), 7, seed, { moss: 0.18 });
-      break;
-    case 'library': planks(d, W, 0, 0, W, H, rgb('#6a4a30'), seed); break;
-    case 'frost': iceTiles(d, W, 0, 0, W, H, rgb('#5a7f9a'), seed); break;
-    case 'abyss': cobble(d, W, 0, 0, W, H, rgb('#2a2448'), 8, seed); for (let k = 0; k < 60; k++) put(d, W, ix0 + Math.floor(h2(k, 1, seed) * (ix1 - ix0)), iy0 + Math.floor(h2(k, 2, seed) * (iy1 - iy0)), [200, 180, 255]); break;
-    case 'volcano': cobble(d, W, 0, 0, W, H, rgb('#4a3030'), 7, seed); break;
-    case 'caves': cobble(d, W, 0, 0, W, H, rgb('#3c4260'), 9, seed); break;
-    case 'crypt': cobble(d, W, 0, 0, W, H, rgb('#3a4458'), 6, seed); break;
-    case 'tower': cobble(d, W, 0, 0, W, H, rgb('#3b3260'), 7, seed); break;
-    default: cobble(d, W, 0, 0, W, H, rgb('#56505e'), 7, seed);
+    case 'forest': grass(d, PW, 0, 0, PW, PH, fb, seed); break;
+    case 'swamp': grass(d, PW, 0, 0, PW, PH, rgb('#3a4a2a'), seed); break;
+    case 'graveyard': cobble(d, PW, 0, 0, PW, PH, rgb('#4a4f4c'), 7, seed, { moss: 0.18 }); break;
+    case 'library': planks(d, PW, 0, 0, PW, PH, rgb('#6a4a30'), seed); break;
+    case 'clockwork': planks(d, PW, 0, 0, PW, PH, rgb('#5a4a3a'), seed); break;
+    case 'frost': iceTiles(d, PW, 0, 0, PW, PH, rgb('#5a7f9a'), seed); break;
+    case 'abyss': cobble(d, PW, 0, 0, PW, PH, rgb('#2a2448'), 8, seed); for (let k = 0; k < 60 * (PW * PH) / (360 * 216); k++) put(d, PW, Math.floor(h2(k, 1, seed) * PW), Math.floor(h2(k, 2, seed) * PH), [200, 180, 255]); break;
+    case 'volcano': cobble(d, PW, 0, 0, PW, PH, rgb('#4a3030'), 7, seed); break;
+    case 'sands': cobble(d, PW, 0, 0, PW, PH, rgb('#a08458'), 9, seed); break;
+    case 'caves': cobble(d, PW, 0, 0, PW, PH, rgb('#3c4260'), 9, seed); break;
+    case 'crypt': cobble(d, PW, 0, 0, PW, PH, rgb('#3a4458'), 6, seed); break;
+    case 'tower': cobble(d, PW, 0, 0, PW, PH, rgb('#3b3260'), 7, seed); break;
+    default: cobble(d, PW, 0, 0, PW, PH, rgb('#56505e'), 7, seed);
   }
-  // murs
+  // murs : texture par tuile, puis ombrage selon le côté qui fait face au sol
   const wb = rgb(B.wallHi);
-  const wallRects = [[0, 0, W, T], [0, H - T, W, H], [0, T, T, H - T], [W - T, T, W, H - T]];
-  for (const [x0, y0, x1, y1] of wallRects) {
+  const wallTex = (x0, y0, x1, y1) => {
     switch (B.wallStyle) {
-      case 'hedge': hedge(d, W, x0, y0, x1, y1, rgb('#2f5a26'), seed); break;
-      case 'shelves': shelves(d, W, x0, y0, x1, y1, seed); break;
-      case 'void': voidTex(d, W, x0, y0, x1, y1, rgb('#1a1438'), seed); break;
-      case 'ice': iceTiles(d, W, x0, y0, x1, y1, rgb('#8ab8d8'), seed + 3); break;
-      case 'rock': cobble(d, W, x0, y0, x1, y1, shade(wb, 1.1), 10, seed + 11); break;
-      case 'basalt': cobble(d, W, x0, y0, x1, y1, rgb('#3a2424'), 8, seed + 11); break;
-      case 'fence': bricks(d, W, x0, y0, x1, y1, rgb('#4a5452'), seed, 10, 5); break;
-      default: bricks(d, W, x0, y0, x1, y1, B.wallStyle === 'rune' ? rgb('#3e3270') : shade(wb, 1.05), seed);
+      case 'hedge': hedge(d, PW, x0, y0, x1, y1, rgb('#2f5a26'), seed); break;
+      case 'shelves': shelves(d, PW, x0, y0, x1, y1, seed); break;
+      case 'void': voidTex(d, PW, x0, y0, x1, y1, rgb('#1a1438'), seed); break;
+      case 'ice': iceTiles(d, PW, x0, y0, x1, y1, rgb('#8ab8d8'), seed + 3); break;
+      case 'rock': cobble(d, PW, x0, y0, x1, y1, shade(wb, 1.1), 10, seed + 11); break;
+      case 'basalt': cobble(d, PW, x0, y0, x1, y1, rgb('#3a2424'), 8, seed + 11); break;
+      case 'sandstone': bricks(d, PW, x0, y0, x1, y1, rgb('#b8945a'), seed, 14, 7); break;
+      case 'brass': bricks(d, PW, x0, y0, x1, y1, rgb('#7a5a2a'), seed, 16, 8); break;
+      case 'roots': hedge(d, PW, x0, y0, x1, y1, rgb('#3a3020'), seed); break;
+      case 'fence': bricks(d, PW, x0, y0, x1, y1, rgb('#4a5452'), seed, 10, 5); break;
+      default: bricks(d, PW, x0, y0, x1, y1, B.wallStyle === 'rune' ? rgb('#3e3270') : shade(wb, 1.05), seed);
     }
+  };
+  // texture des murs sur toute la surface puis on remet le sol là où il faut (plus rapide que tuile par tuile)
+  const floorCopy = new Uint8ClampedArray(d);
+  wallTex(0, 0, PW, PH);
+  for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
+    if (isWall(tx, ty)) continue;
+    for (let y = ty * T; y < ty * T + T; y++) { const i0 = (y * PW + tx * T) * 4; d.set(floorCopy.subarray(i0, i0 + T * 4), i0); }
   }
-  // profondeur : le haut du mur du fond est un « chapeau » sombre, le bas une façade éclairée
+  const mul = (x, y, k) => { const i = (y * PW + x) * 4; d[i] = cl(d[i] * k); d[i + 1] = cl(d[i + 1] * k); d[i + 2] = cl(d[i + 2] * k); };
   const cap = Math.floor(T * 0.42);
-  for (let y = 0; y < T; y++) for (let x = 0; x < W; x++) {
-    const i = (y * W + x) * 4;
-    const k = y < cap ? 0.58 : y === cap ? 1.3 : 1.05;
-    d[i] = cl(d[i] * k); d[i + 1] = cl(d[i + 1] * k); d[i + 2] = cl(d[i + 2] * k);
-  }
-  for (let y = H - T; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; d[i] *= 0.7; d[i + 1] *= 0.7; d[i + 2] *= 0.7; }
-  for (let y = T; y < H - T; y++) for (const x0 of [0, W - T]) for (let x = x0; x < x0 + T; x++) { const i = (y * W + x) * 4; d[i] *= 0.82; d[i + 1] *= 0.82; d[i + 2] *= 0.82; }
-  // arête intérieure des murs (effet de profondeur) + ombre portée tramée
   const edge = rgb('#0c0814');
-  for (let x = T - 1; x <= W - T; x++) { put(d, W, x, T - 1, edge); put(d, W, x, H - T, edge); }
-  for (let y = T - 1; y <= H - T; y++) { put(d, W, T - 1, y, edge); put(d, W, W - T, y, edge); }
-  for (let y = iy0; y < iy0 + 7; y++) for (let x = ix0; x < ix1; x++) {
-    const k = 1 - (y - iy0) / 7;
-    if (BAYER[(y & 3) * 4 + (x & 3)] < k * 0.9) { const i = (y * W + x) * 4; d[i] *= 0.55; d[i + 1] *= 0.55; d[i + 2] *= 0.55; }
+  for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
+    if (!isWall(tx, ty)) continue;
+    const below = !isWall(tx, ty + 1), above = !isWall(tx, ty - 1), left = !isWall(tx - 1, ty), right = !isWall(tx + 1, ty);
+    const near = below || above || left || right || !isWall(tx - 1, ty - 1) || !isWall(tx + 1, ty - 1) || !isWall(tx - 1, ty + 1) || !isWall(tx + 1, ty + 1);
+    for (let y = ty * T; y < ty * T + T; y++) for (let x = tx * T; x < tx * T + T; x++) {
+      if (!near) { const i = (y * PW + x) * 4; d[i] = 6; d[i + 1] = 4; d[i + 2] = 12; continue; } // vide (salles en L)
+      const ly = y - ty * T;
+      if (below) mul(x, y, ly < cap ? 0.58 : ly === cap ? 1.3 : 1.05);
+      else if (above) mul(x, y, 0.7);
+      else if (left || right) mul(x, y, 0.82);
+      else mul(x, y, 0.62);
+    }
+    // arêtes entre mur et sol
+    if (below) for (let x = tx * T; x < tx * T + T; x++) put(d, PW, x, ty * T + T - 1, edge);
+    if (above) for (let x = tx * T; x < tx * T + T; x++) put(d, PW, x, ty * T, edge);
+    if (right) for (let y = ty * T; y < ty * T + T; y++) put(d, PW, tx * T + T - 1, y, edge);
+    if (left) for (let y = ty * T; y < ty * T + T; y++) put(d, PW, tx * T, y, edge);
   }
-  for (let x = ix0; x < ix0 + 4; x++) for (let y = iy0; y < iy1; y++) {
-    const k = 1 - (x - ix0) / 4;
-    if (BAYER[(y & 3) * 4 + (x & 3)] < k * 0.7) { const i = (y * W + x) * 4; d[i] *= 0.65; d[i + 1] *= 0.65; d[i + 2] *= 0.65; }
+  // ombres portées tramées sous les murs du haut et à droite des murs de gauche
+  for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
+    if (isWall(tx, ty)) continue;
+    if (isWall(tx, ty - 1)) for (let y = ty * T; y < ty * T + 7; y++) for (let x = tx * T; x < tx * T + T; x++) {
+      const k = 1 - (y - ty * T) / 7;
+      if (BAYER[(y & 3) * 4 + (x & 3)] < k * 0.9) mul(x, y, 0.55);
+    }
+    if (isWall(tx - 1, ty)) for (let x = tx * T; x < tx * T + 4; x++) for (let y = ty * T; y < ty * T + T; y++) {
+      const k = 1 - (x - tx * T) / 4;
+      if (BAYER[(y & 3) * 4 + (x & 3)] < k * 0.7) mul(x, y, 0.65);
+    }
   }
   ctx.putImageData(img, 0, 0);
 }

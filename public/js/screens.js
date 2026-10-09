@@ -3,8 +3,7 @@
 // ============================================================
 import { ITEMS, ENEMIES, BOSSES, TALENTS, ACHIEVEMENTS, SYNERGIES, CHARACTERS } from '/shared/data.js';
 import { meta } from './meta.js';
-import { drawEnemyBody, lookFor } from './sprites.js';
-import { pixelize } from './pixel.js';
+import { drawMonster, itemIconURL } from './art.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -35,13 +34,13 @@ export function renderTalents() {
 // ---------------------------------------------------------- encyclopédie
 function enemyPortrait(type, boss) {
   const c = document.createElement('canvas');
-  c.width = 40; c.height = 40;
-  const g = c.getContext('2d', { willReadFrequently: true });
-  const e = { t: type, b: boss ? 1 : 0, id: 3, x: 20, y: 20 };
-  const r = boss ? 13 : Math.min(12, (ENEMIES[type]?.r || 12) * 0.75);
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  drawEnemyBody(g, lookFor(e, BOSSES), 20, 21, r, e, 1.3, { tint: null, lx: 0, ly: 0.5, dx: 0, dy: 1, face: 1 });
-  pixelize(g, 40, 40, { outline: true });
+  c.width = 48; c.height = 48;
+  const g = c.getContext('2d');
+  const def = boss ? BOSSES[type] : ENEMIES[type];
+  const r0 = def?.r || 12;
+  const r = boss ? Math.min(20, r0 * 0.42) : Math.min(16, r0 * 0.95);
+  const e = { t: type, b: boss ? 1 : 0, id: 3, x: 24, y: 26, r };
+  drawMonster(g, e, 0.3, {});
   return c;
 }
 let codexTab = 'items';
@@ -67,7 +66,7 @@ export function renderCodex(tab = codexTab) {
       if (known) seen++;
       if (ach) add(`<span class="g">🔒</span><span><div class="n">???</div><div class="d">Succès « ${esc(ach.name)} » : ${esc(ach.desc)}</div></span>`, 'unknown');
       else if (!known) add('<span class="g">❔</span><span><div class="n">???</div><div class="d">Pas encore trouvé</div></span>', 'unknown');
-      else add(`<span class="g">${it.glyph}</span><span><div class="n">${esc(it.name)}${it.cursed ? ' (maudit)' : ''}</div><div class="d">${esc(it.desc)}</div></span>`, it.cursed ? 'cursed' : '');
+      else add(`<span class="g"><img class="ico" src="${itemIconURL(id)}" alt=""></span><span><div class="n">${esc(it.name)}${it.cursed ? ' (maudit)' : ''}</div><div class="d">${esc(it.desc)}</div></span>`, it.cursed ? 'cursed' : '');
     }
     $('#codex-count').textContent = `${seen} / ${all.length} objets découverts`;
   } else if (tab === 'enemies' || tab === 'bosses') {

@@ -256,6 +256,10 @@ export const audio = {
       case 'chest': tone(300, 0.15, { to: 500, type: 'sawtooth', vol: 0.06, filter: 'lowpass', ff: 1200 }); [784, 988, 1175].forEach((f, i) => tone(f, 0.2, { type: 'triangle', vol: 0.1, delay: 0.12 + i * 0.06 })); break;
       case 'nokey': tone(160, 0.12, { type: 'square', vol: 0.08 }); tone(120, 0.18, { type: 'square', vol: 0.08, delay: 0.1 }); break;
       case 'unlock': tone(1200, 0.04, { type: 'square', vol: 0.08 }); tone(800, 0.06, { type: 'square', vol: 0.08, delay: 0.06 }); noise(0.1, { filter: 'highpass', ff: 3000, vol: 0.08, delay: 0.1 }); break;
+      case 'orb': [784, 1046, 1568].forEach((f, i) => tone(f, 0.35, { type: 'sine', vol: 0.12, delay: i * 0.05, wet: 0.6 })); noise(0.4, { filter: 'bandpass', ff: 3000, fto: 800, vol: 0.06 }); break;
+      case 'potion': tone(300, 0.12, { to: 700, vol: 0.1 }); tone(500, 0.12, { to: 900, vol: 0.1, delay: 0.12 }); tone(1046, 0.25, { type: 'triangle', vol: 0.1, delay: 0.26, wet: 0.4 }); break;
+      case 'badpotion': tone(300, 0.12, { to: 700, vol: 0.1 }); tone(500, 0.12, { to: 900, vol: 0.1, delay: 0.12 }); tone(220, 0.35, { to: 110, type: 'sawtooth', vol: 0.08, delay: 0.26, filter: 'lowpass', ff: 900 }); break;
+      case 'emote': tone([880, 660, 990, 1175][(arg || 1) - 1] || 880, 0.1, { type: 'triangle', vol: 0.1 }); tone(([880, 660, 990, 1175][(arg || 1) - 1] || 880) * 1.25, 0.12, { type: 'triangle', vol: 0.09, delay: 0.08 }); break;
       case 'pickup': tone(660, 0.06, { type: 'triangle', vol: 0.12 }); tone(880, 0.1, { type: 'triangle', vol: 0.12, delay: 0.05 }); break;
       case 'sacrifice': tone(110, 1.2, { type: 'sine', vol: 0.3, wet: 0.6 }); tone(220, 1.0, { type: 'triangle', vol: 0.1, wet: 0.6 }); noise(0.2, { filter: 'lowpass', ff: 600, vol: 0.2 }); break;
       case 'synergy': for (let i = 0; i < 8; i++) tone(800 + i * 150, 0.15, { type: 'sine', vol: 0.08, delay: i * 0.04, wet: 0.5 }); break;

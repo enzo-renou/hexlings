@@ -52,12 +52,22 @@ export const CHARACTERS = {
     unlock: 'Terminer une run (10 étages)',
   },
 };
-export const CHAR_ORDER = ['pyra', 'glacius', 'sylva', 'volt', 'morgane', 'bricolo'];
+CHARACTERS.solaris = {
+  name: 'Solaris', title: 'Mage du Soleil',
+  desc: 'Il vole et charge un rayon de soleil de courte portée (maintiens le tir puis relâche).',
+  robe: '#b8862a', hat: '#e8b830', trim: '#fff1a0', skin: '#f0d0b0', shot: '#ffe45c', hair: '#ff8a3a',
+  stats: { maxHp: 6, dmg: 3.4, fireDelay: 0.34, speed: 168, range: 260, shotSpeed: 340, luck: 0 },
+  flags: { w_brim: true, beamLen: 210, flying: true, beamColor: 'solaris' }, spell: 's_sunbeam',
+  unlock: 'Gagner une run en difficile avec Volt (le 4e sorcier)',
+};
+export const CHAR_ORDER = ['pyra', 'glacius', 'sylva', 'volt', 'morgane', 'bricolo', 'solaris'];
 export const DEFAULT_UNLOCKED = ['pyra', 'glacius', 'sylva', 'volt'];
 
 // ---------- Objets ----------
 // add : bonus additifs ; mult : multiplicateurs ; flags : nouvelles façons de tirer
 // hp : conteneurs de cœur (en demi-cœurs) ; pools : où on peut le trouver
+import { MORE_ITEMS, ICONS } from './items_more.js';
+import { MORE_ENEMIES, MORE_BOSSES } from './bestiary.js';
 const P_ALL = ['treasure', 'shop', 'boss'];
 export const ITEMS = {
   hat:        { name: 'Chapeau Pointu Ancien', desc: '+1 cœur, dégâts +0.3', glyph: '🎩', hp: 2, add: { dmg: 0.3 }, pools: P_ALL },
@@ -123,6 +133,9 @@ export const ITEMS = {
   s_haste:  { name: 'Sort : Hâte', desc: 'ESPACE : cadence x2 et vitesse +30% pendant 6 s', glyph: '💨', active: { charge: 2, effect: 'haste' }, pools: P_ALL },
   s_freeze: { name: 'Sort : Temps Figé', desc: 'ESPACE : gèle ennemis et projectiles 4 s', glyph: '🕰️', active: { charge: 3, effect: 'freeze' }, pools: P_ALL },
 };
+Object.assign(ITEMS, MORE_ITEMS);
+for (const [id, it] of Object.entries(ITEMS)) { if (!it.icon) it.icon = ICONS[id] || ['gem', '#c8b8ff', '#ffffff']; if (!it.glyph) it.glyph = '✦'; }
+
 
 // ---------- Reliques (progression permanente, gagnées en terminant une run) ----------
 // Chaque relique a un niveau (1 à 3) : en regagner une l'améliore.
@@ -157,6 +170,8 @@ export const ENEMIES = {
   pixie:    { name: 'Fée Farceuse', hp: 6, r: 9, speed: 120, ai: 'pixie', fly: true, fire: 2.0, shotSpd: 170, weight: 2, shot: 'pixie', splat: 'sparkle' },
   wolf:     { name: 'Loup Sylvestre', hp: 11, r: 13, speed: 70, ai: 'dasher', weight: 2, splat: '#6a1a10' },
   zombie:   { name: 'Zombie', hp: 18, r: 14, speed: 36, ai: 'zombie', weight: 3, splat: '#4a6a2a' },
+  crystal:  { name: 'Cristal de Protection', hp: 22, r: 14, speed: 0, ai: 'still', weight: 0, heavy: true, contact: false, splat: 'sparkle' },
+  mimic:    { name: 'Coffre Mimique', hp: 40, r: 16, speed: 70, ai: 'mimic', weight: 0, heavy: true, ignoreClear: true, shot: 'e', shotSpd: 200, splat: '#6a3a1a' },
   book:     { name: 'Grimoire Volant', hp: 10, r: 12, speed: 70, ai: 'floater', fly: true, fire: 2.4, shotSpd: 180, pattern: 'ring4', weight: 3, shot: 'page', splat: 'pages' },
 };
 
@@ -304,6 +319,13 @@ export const BOSSES = {
 
 
 // ---------- Synergies : deux pouvoirs qui se combinent
+Object.assign(ENEMIES, MORE_ENEMIES);
+Object.assign(BOSSES, MORE_BOSSES);
+// Vorthan devient un boss final unique : plus gros, dans une grande salle
+Object.assign(BOSSES.archmage, { r: 52, room: '2x2', final: true, hp: 1500, hands: 'shadowhand' });
+BOSSES.archmage.attacks.push({ k: 'beam', n: 2, rot: 0.8, warn: 0.9, dur: 2.2, c: 'purple' }, { k: 'rain', dur: 2.4, every: 0.15, c: 'e2', shots: 4 });
+BOSSES.lich.room = '2x1';
+
 export const SYNERGIES = [
   { id: 'toxicfire', name: 'Feu Toxique', desc: 'Brûlure + poison : les ennemis relâchent un nuage toxique', need: (f) => f.burn && f.poison },
   { id: 'swarm', name: 'Essaim', desc: 'Triple tir + tête chercheuse : 5 projectiles', need: (f) => f.triple && f.homing },
@@ -348,7 +370,7 @@ export const ACHIEVEMENTS = [
   { id: 'win', name: 'Libérateur', desc: 'Terminer une run', item: 'treasuremap' },
   { id: 'win_hard', name: 'Héros légendaire', desc: 'Terminer une run en difficile', item: 'glasscannon' },
   { id: 'kills500', name: 'Exterminateur', desc: 'Vaincre 500 monstres (au total)', item: 'thornarmor' },
-  { id: 'poop50', name: 'Spécialiste des crottes', desc: 'Casser 50 crottes (au total)', item: 'sackbombs' },
+  { id: 'poop50', name: 'Rat de bibliothèque', desc: 'Renverser 50 piles de livres (au total)', item: 'sackbombs' },
   { id: 'secret5', name: 'Explorateur', desc: 'Trouver 5 salles secrètes (au total)', item: 'xray' },
   { id: 'sacrifice', name: 'Sang pour sang', desc: 'Utiliser 5 fois un autel de sacrifice dans une run', item: 'bloodmoon' },
   { id: 'challenge', name: 'Gladiateur', desc: 'Réussir une salle de défi', item: 'arcanebomb' },

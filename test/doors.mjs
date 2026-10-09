@@ -1,9 +1,9 @@
 import { Game } from '../shared/game.js';
 import { DT, DIRS, TILE } from '../shared/constants.js';
 const g = new Game({ seed: 42, players: [{ id: 'a', charId: 'pyra' }, { id: 'b', charId: 'volt' }] });
-const d = Object.keys(DIRS).find((k) => g.room.doors[k]);
+const d = g.room.doors.find((q) => q.open);
 const start = g.room;
-const put = (p) => { p.x = (DIRS[d].tx + 0.5) * TILE; p.y = (DIRS[d].ty + 0.5) * TILE; };
+const put = (p) => { p.x = (d.tx + 0.5) * TILE; p.y = (d.ty + 0.5) * TILE; };
 put(g.players[0]); g.step(DT); g.step(DT);
 console.log('un seul joueur sur la porte -> reste dans la salle :', g.room === start);
 put(g.players[1]); g.step(DT); g.step(DT);

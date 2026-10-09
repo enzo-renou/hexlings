@@ -12,7 +12,9 @@ import { renderInventory } from './inventory.js';
 import { BIOMES } from '/shared/biomes.js';
 import { Renderer } from './render.js';
 import { drawPixelWizard } from './sprites.js';
-import { Input, ACTIONS, DEFAULT_KEYS, keyLabel } from './input.js';
+import { Input, ACTIONS, DEFAULT_KEYS, keyLabel, PAD_ACTIONS, DEFAULT_PAD, padLabel } from './input.js';
+import { initTooltips, itemChip } from './tooltip.js';
+import { drawWizardSprite } from './art.js';
 import { menuTexture, pixelize } from './pixel.js';
 import { Net } from './net.js';
 import { meta } from './meta.js';
@@ -28,6 +30,7 @@ audio.setMusicMuted(!!meta.data.musicMuted);
 const S0 = meta.data.settings;
 audio.setVolumes(S0.sfx, S0.music);
 input.setBindings(S0.keys);
+input.setPad(S0.pad);
 renderer.shakeOn = S0.shake !== false;
 document.documentElement.style.setProperty('--stone', `url(${menuTexture()})`);
 function refreshKeyNames() {
@@ -35,7 +38,7 @@ function refreshKeyNames() {
   renderer.keyNames = {
     move: [b.up, b.left, b.down, b.right].map(keyLabel).join(''),
     shoot: [b.shootUp, b.shootLeft, b.shootDown, b.shootRight].map(keyLabel).join(' '),
-    spell: keyLabel(b.spell), bomb: keyLabel(b.bomb), map: keyLabel(b.map), inv: keyLabel(b.inv),
+    spell: keyLabel(b.spell), bomb: keyLabel(b.bomb), map: keyLabel(b.map), inv: keyLabel(b.inv), orb: keyLabel(b.orb), potion: keyLabel(b.potion),
   };
   const ik = document.querySelector('#inv-key'); if (ik) ik.textContent = keyLabel(b.inv);
 }
@@ -55,7 +58,8 @@ let lastT = performance.now();
 let selChar = meta.data.unlocked.includes(meta.data.lastChar) ? meta.data.lastChar : 'pyra';
 let lastSnap = null;
 let runStart = 0;
-let difficulty = meta.data.difficulty === 'hard' && meta.data.wins > 0 ? 'hard' : 'normal';
+let difficulty = meta.data.difficulty === 'hardcore' ? (meta.hardcoreUnlocked() ? 'hardcore' : 'hard') : meta.data.difficulty === 'hard' ? 'hard' : 'normal';
+const DIFF_NAMES = { normal: 'Normal', hard: 'Difficile', hardcore: 'Hardcore', daily: 'Défi du jour' };
 let runMode = 'normal'; // normal | hard | daily
 const predictor = new Predictor();
 let runAch = [];        // succès gagnés pendant la run
@@ -82,11 +86,11 @@ function playerInfo() {
 function portrait(charId, size = 96) {
   // portrait en pixel art : petit dessin, contour sombre, agrandi sans flou
   const c = document.createElement('canvas');
-  c.width = 24; c.height = 30;
+  c.width = 48; c.height = 60;
   const g = c.getContext('2d', { willReadFrequently: true });
-  drawPixelWizard(g, 12, 15, CHARACTERS[charId], { px: 1, fx: 0, fy: 1, noShadow: true });
-  pixelize(g, 24, 30, { outline: true });
-  c.style.width = size + 'px'; c.style.height = size + 'px';
+  drawWizardSprite(g, 24, 44, CHARACTERS[charId], { fx: 0, fy: 1, noShadow: true, portrait: true });
+  pixelize(g, 48, 60, { outline: true });
+  c.style.width = size + 'px'; c.style.height = Math.round(size * 1.25) + 'px';
   return c;
 }
 
@@ -103,6 +107,15 @@ function renderChars(container, onPick) {
     nm.className = 'nm';
     nm.textContent = locked ? '???' : ch.name;
     b.appendChild(nm);
+    const mk = meta.data.marks[id];
+    if (mk && !locked) {
+      // petit papier de victoire (comme les notes d'Isaac) : croix = normal, cadre rouge = difficile, crâne = hardcore
+      const note = document.createElement('div');
+      note.className = 'note' + (mk.hard || mk.hardcore ? ' hard' : '') + (mk.hardcore ? ' hc' : '');
+      note.title = ['Victoires :', mk.normal ? 'normal ✓' : '', mk.hard ? 'difficile ✓' : '', mk.hardcore ? 'hardcore ✓' : ''].filter(Boolean).join(' ');
+      note.innerHTML = `<i>${mk.normal || mk.hard || mk.hardcore ? '✗' : ''}</i>${mk.hardcore ? '<b>☠</b>' : ''}`;
+      b.appendChild(note);
+    }
     b.onclick = () => {
       if (locked) { showCharInfo(id); return; }
       selChar = id;
@@ -124,13 +137,20 @@ function showCharInfo(id) {
     ? `<div><div class="t">🔒 ???</div><div class="d">Pour débloquer : ${ch.unlock}</div></div>`
     : `<div><div class="t">${ch.name} <small style="color:var(--muted)">· ${ch.title}</small></div>
          <div class="d">${ch.desc}</div>
-         <div class="d" style="margin-top:6px">Sort de départ : ${spell.glyph} ${spell.name.replace('Sort : ', '')}</div></div>
+         <div class="d" style="margin-top:6px">Sort de départ : ${itemChip(ch.spell)} ${spell.name.replace('Sort : ', '')}</div>
+         ${marksText(id)}</div>
        <div class="stats">
          <span>Vie</span><b>${'♥'.repeat(s.maxHp / 2)}</b>
          <span>Dégâts</span><b>${s.dmg}</b>
          <span>Cadence</span><b>${(1 / s.fireDelay).toFixed(1)}/s</b>
          <span>Vitesse</span><b>${(s.speed / 100).toFixed(2)}</b>
        </div>`;
+}
+
+function marksText(id) {
+  const m = meta.data.marks[id] || {};
+  const parts = [['normal', 'Normal'], ['hard', 'Difficile'], ['hardcore', 'Hardcore']].map(([k, n]) => `<span class="mk ${m[k] ? 'on' : ''} ${k}">${m[k] ? '✗' : '·'} ${n}</span>`);
+  return `<div class="d marks">Victoires : ${parts.join(' ')}</div>`;
 }
 
 function renderRelics() {
@@ -161,13 +181,19 @@ function renderTitle() {
   $('#profile-stats').textContent = `Runs : ${d.runs} · Victoires : ${d.wins} · Meilleur étage : ${d.bestFloor || '-'} · Monstres vaincus : ${d.kills} · Succès : ${d.achievements.length}/${ACHIEVEMENTS.length}`;
   $('#nav-shards').textContent = `◆ ${d.shards}`;
   renderAccount();
-  const hardOk = d.wins > 0;
-  if (!hardOk) difficulty = 'normal';
+  const hcOk = meta.hardcoreUnlocked();
+  if (!hcOk && difficulty === 'hardcore') difficulty = 'hard';
   document.querySelectorAll('#diff .seg').forEach((b) => {
     b.classList.toggle('on', b.dataset.diff === difficulty);
-    b.classList.toggle('locked', b.dataset.diff === 'hard' && !hardOk);
-    b.title = b.dataset.diff === 'hard' && !hardOk ? 'Termine une run pour débloquer le mode difficile' : '';
+    b.classList.toggle('locked', b.dataset.diff === 'hardcore' && !hcOk);
+    b.title = b.dataset.diff === 'hardcore' && !hcOk ? 'Gagne une run en difficile pour débloquer le mode hardcore' : '';
   });
+  $('#diff-hint').textContent = {
+    normal: 'Le donjon classique.',
+    hard: 'Monstres et boss plus résistants, boss qui tirent plus vite, moins de cœurs.',
+    hardcore: 'Comme difficile, mais tu n’as qu’UN seul cœur (+1 cœur d’âme max). Bonne chance...',
+  }[difficulty];
+  $('#diff-hint').classList.toggle('danger', difficulty === 'hardcore');
   const dailyDone = d.daily.day === todayKey() && d.daily.done;
   $('#btn-daily').textContent = dailyDone ? '📅 Défi du jour (déjà joué aujourd’hui)' : '📅 Défi du jour';
 
@@ -278,8 +304,16 @@ function renderLobby() {
   document.querySelectorAll('#lobby-diff .seg').forEach((b) => {
     b.classList.toggle('on', b.dataset.diff === cur);
     b.disabled = !host;
-    b.onclick = () => { if (!host) return; net.update({ difficulty: b.dataset.diff === 'hard' ? 'hard' : 'normal', daily: b.dataset.diff === 'daily' }); };
+    const lockedHc = b.dataset.diff === 'hardcore' && !meta.hardcoreUnlocked();
+    b.classList.toggle('locked', lockedHc);
+    b.onclick = () => {
+      if (!host) return;
+      if (lockedHc) { $('#lobby-msg').textContent = 'Gagne une run en difficile pour débloquer le hardcore.'; return; }
+      net.update({ difficulty: b.dataset.diff === 'daily' ? 'normal' : b.dataset.diff, daily: b.dataset.diff === 'daily' });
+    };
   });
+  const dn = $('#lobby-diff-note');
+  if (dn) dn.textContent = host ? 'Tu es le chef d’équipe : c’est toi qui choisis la difficulté.' : `Difficulté choisie par le chef : ${DIFF_NAMES[cur]}`;
   $('#btn-start').disabled = !host;
   $('#btn-start').textContent = host ? `Lancer la partie (${lobby.players.length}/4)` : 'L’hôte va lancer la partie...';
 }
@@ -351,6 +385,15 @@ function handleEvents(evs, snap, meId) {
       case 'collapse': audio.play('collapse'); break;
       case 'toxic': audio.play('toxic'); break;
       case 'ping': audio.play('ping'); break;
+      case 'orbuse': audio.play('orb'); break;
+      case 'potionuse': audio.play(ev.good === false ? 'badpotion' : 'potion'); break;
+      case 'gotsoul': case 'gotblack': case 'gotorb': case 'gotpotion': if (mine) audio.play('pickup'); break;
+      case 'blackblast': audio.play('boom'); break;
+      case 'teleport': audio.play('whoosh'); break;
+      case 'quake': audio.play('slam'); break;
+      case 'mimic': audio.play('chest'); break;
+      case 'emote': audio.play('emote', ev.n); break;
+      case 'cursedoor': if (mine) audio.play('hurt'); break;
       case 'allyrevive': audio.play('revive'); if (ev.by === meId) achieve('revive'); break;
       case 'bossdown':
         achieve('first_boss');
@@ -372,7 +415,7 @@ function achieve(id) {
   if (!a) return;
   runAch.push(a);
   audio.play('achievement');
-  renderer.toast(`Succès : ${a.name}`, a.item ? `Nouvel objet débloqué : ${ITEMS[a.item].glyph} ${ITEMS[a.item].name}` : a.desc, '#ffe08a', '🏆');
+  renderer.toast(`Succès : ${a.name}`, a.item ? `Nouvel objet débloqué : ${ITEMS[a.item].name}` : a.desc, '#ffe08a', '🏆');
 }
 
 // ---------------------------------------------------------- fin de run
@@ -384,7 +427,14 @@ function endRun(snap, meId) {
   if (win) meta.data.wins++; else meta.data.deaths++;
   if (win) {
     achieve('win');
-    if (runMode === 'hard') achieve('win_hard');
+    if (runMode === 'hard' || runMode === 'hardcore') achieve('win_hard');
+    const chW = me ? me.c : selChar;
+    meta.mark(chW, runMode === 'daily' ? 'normal' : runMode);
+    // le mage solaire se débloque en gagnant en difficile avec le 4e sorcier (Volt)
+    if ((runMode === 'hard' || runMode === 'hardcore') && chW === CHAR_ORDER[3] && !meta.data.unlocked.includes('solaris')) {
+      meta.unlock('solaris');
+      renderer.toast('Nouveau sorcier débloqué !', 'Solaris, le Mage du Soleil', '#ffe45c', '🔓');
+    }
     if (runMode === 'daily') achieve('daily');
     const ch = me ? me.c : selChar;
     if (!meta.data.stats.winChars.includes(ch)) meta.data.stats.winChars.push(ch);
@@ -394,14 +444,16 @@ function endRun(snap, meId) {
   // éclats d'âme : même une défaite rapporte quelque chose
   let shards = snap.floor + snap.run.bosses * 3 + (win ? 15 : 0) + (runMode === 'daily' ? 5 : 0);
   if (runMode === 'hard') shards = Math.round(shards * 1.5);
+  if (runMode === 'hardcore') shards = Math.round(shards * 2.2);
   meta.data.shards += shards;
   // score
   let score = snap.floor * 1000 + snap.run.bosses * 500 + snap.run.kills * 10 + snap.run.secrets * 300 + (me ? me.coins * 5 : 0) + (win ? 5000 + Math.max(0, 3000 - secs0 * 2) : 0);
   if (runMode === 'hard') score = Math.round(score * 1.5);
+  if (runMode === 'hardcore') score = Math.round(score * 2.5);
   meta.data.stats.bestScore = Math.max(meta.data.stats.bestScore, score);
   meta.save();
   $('#end-gains').innerHTML = `<span class="chip">◆ +${shards} éclats d’âme</span><span class="chip">Score : ${score.toLocaleString('fr-FR')}</span><span class="chip" id="end-rank">Envoi au classement...</span>`
-    + runAch.map((a) => `<span class="chip ach">🏆 ${a.name}${a.item ? ' → ' + ITEMS[a.item].glyph : ''}</span>`).join('');
+    + runAch.map((a) => `<span class="chip ach">🏆 ${a.name}${a.item ? ' → ' + ITEMS[a.item].name : ''}</span>`).join('');
   meta.api('/api/score', { method: 'POST', body: { mode: runMode, score, floor: snap.floor, time: secs0, won: win, char: me ? me.c : selChar, name: meta.data.name } })
     .then((r) => { const el = $('#end-rank'); if (el) el.textContent = r.rank ? `Classement : ${r.rank}ᵉ` : 'Score enregistré'; })
     .catch(() => { const el = $('#end-rank'); if (el) el.textContent = 'Classement hors ligne'; });
@@ -421,7 +473,7 @@ function endRun(snap, meId) {
     rw.classList.remove('hidden');
   } else rw.classList.add('hidden');
   const secs = Math.floor((performance.now() - runStart) / 1000);
-  const items = me ? me.items.map((id) => `<span title="${ITEMS[id].name} : ${ITEMS[id].desc}">${ITEMS[id].glyph}</span>`).join('') : '';
+  const items = me ? me.items.map((id) => itemChip(id)).join('') : '';
   $('#end-stats').innerHTML = `
     <span>Étage atteint <b>${snap.floor}/10</b></span>
     <span>Durée <b>${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}</b></span>
@@ -429,7 +481,7 @@ function endRun(snap, meId) {
     <span>Boss vaincus <b>${snap.run.bosses}</b></span>
     <span>Salles explorées <b>${snap.run.rooms}</b></span>
     <span>Salles secrètes <b>${snap.run.secrets}</b></span>
-    <span>Mode <b>${runMode === 'daily' ? 'Défi du jour' : runMode === 'hard' ? 'Difficile' : 'Normal'}</b></span>
+    <span>Mode <b class="${runMode === 'hardcore' ? 'danger' : ''}">${DIFF_NAMES[runMode] || 'Normal'}</b></span>
     <span>Graine <b>${snap.seed}</b></span>
     <div style="grid-column:1/-1" class="inv">${items}</div>`;
   const host = mode === 'multi' && lobby && lobby.host === net.id;
@@ -483,6 +535,34 @@ function renderKeys() {
   }
 }
 // ---------------------------------------------------------- inventaire (touche B / bouton Select)
+function renderPad() {
+  const tb = $('#pad-table');
+  if (!tb) return;
+  tb.innerHTML = '';
+  for (const a of PAD_ACTIONS) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td'); td.textContent = a.label;
+    const td2 = document.createElement('td');
+    const b = document.createElement('button');
+    b.className = 'keybtn';
+    b.textContent = padLabel(input.pad[a.id]);
+    b.onclick = () => {
+      b.textContent = 'Appuie...';
+      b.classList.add('wait');
+      input.padCapture = (btn) => {
+        const other = Object.keys(input.pad).find((k) => input.pad[k] === btn && k !== a.id);
+        if (other) input.pad[other] = input.pad[a.id];
+        input.pad[a.id] = btn;
+        meta.data.settings.pad = { ...input.pad };
+        meta.save();
+        renderPad();
+      };
+    };
+    td2.appendChild(b);
+    tr.append(td, td2);
+    tb.appendChild(tr);
+  }
+}
 function openInv() {
   if (!inGame || ended || settingsOpen) return;
   invOpen = true;
@@ -510,12 +590,13 @@ function openSettings() {
   $('#vol-music').value = Math.round(st.music * 100);
   $('#opt-shake').checked = st.shake !== false;
   renderKeys();
+  renderPad();
   const snap = lastSnap;
   const me = inGame && snap && snap.players.find((p) => p.id === (mode === 'multi' ? net.id : 'local'));
   $('#set-run').classList.toggle('hidden', !inGame || ended);
   $('#btn-quit').classList.toggle('hidden', !inGame || ended);
   $('#pause-items').innerHTML = me && me.items.length
-    ? me.items.map((id) => `<span title="${ITEMS[id].name} : ${ITEMS[id].desc}">${ITEMS[id].glyph}</span>`).join('')
+    ? me.items.map((id) => itemChip(id)).join('')
     : '<small class="hint">Aucun objet pour l’instant</small>';
   $('#settings-note').textContent = inGame && mode === 'multi' ? 'Attention : en multi, la partie continue pendant que tu es dans ce menu.' : '';
   $('#btn-quit').textContent = mode === 'multi' ? 'Quitter la partie' : 'Abandonner la run';
@@ -524,7 +605,7 @@ function openSettings() {
 }
 function closeSettings() {
   settingsOpen = false;
-  input.capture = null;
+  input.capture = null; input.padCapture = null;
   if (inGame) { paused = false; show(ended ? '#screen-end' : null); }
   else show(currentScreen);
 }
@@ -606,7 +687,7 @@ function handlePad() {
   const playing = inGame && !ended && !settingsOpen && !invOpen;
   for (const ev of evs) {
     if (ev === 'start') { if (inGame && !ended) { if (invOpen) closeInv(); togglePause(); } else if (topScreen()?.id === 'screen-intro') $('#btn-skip').click(); continue; }
-    if (ev === 'select') { if (inGame && !ended && !settingsOpen) toggleInv(); continue; }
+    if (ev === 'select') { if (invOpen) closeInv(); continue; }
     if (playing) continue; // en jeu, les boutons servent à tirer
     const scr = topScreen();
     if (!scr) continue;
@@ -642,6 +723,9 @@ function frame(now) {
       if (input.consumeSpell()) game.requestSpell('local');
       if (input.consume('bomb')) game.requestBomb('local');
       if (input.consume('ping')) game.requestPing('local');
+      if (input.consume('orb')) game.requestOrb('local');
+      if (input.consume('potion')) game.requestPotion('local');
+      for (let i = 1; i <= 4; i++) if (input.consume('emote' + i)) game.requestEmote('local', i - 1);
       acc += dt;
       while (acc >= DT) { game.step(DT); acc -= DT; }
     } else input.consumeSpell();
@@ -658,6 +742,9 @@ function frame(now) {
     if (input.consumeSpell() && !paused) net.spell();
     if (input.consume('bomb') && !paused) net.bomb();
     if (input.consume('ping') && !paused) net.mark();
+    if (input.consume('orb') && !paused) net.orb();
+    if (input.consume('potion') && !paused) net.potion();
+    for (let i = 1; i <= 4; i++) if (input.consume('emote' + i) && !paused) net.emote(i - 1);
     renderer.showMap = !paused && input.mapHeld();
     let v = net.view();
     if (v) {
@@ -687,7 +774,7 @@ $('#btn-daily').onclick = () => {
   startSolo(true);
 };
 document.querySelectorAll('#diff .seg').forEach((b) => (b.onclick = () => {
-  if (b.dataset.diff === 'hard' && meta.data.wins < 1) { $('#title-msg').textContent = 'Termine une run pour débloquer le mode difficile.'; return; }
+  if (b.dataset.diff === 'hardcore' && !meta.hardcoreUnlocked()) { $('#title-msg').textContent = 'Gagne une run en mode difficile pour débloquer le hardcore.'; return; }
   difficulty = b.dataset.diff; meta.data.difficulty = difficulty; meta.save(); renderTitle();
 }));
 document.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => {
@@ -721,6 +808,7 @@ $('#vol-sfx').onchange = () => audio.play('coin');
 $('#vol-music').oninput = (e) => { meta.data.settings.music = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
 $('#opt-shake').onchange = (e) => { meta.data.settings.shake = e.target.checked; renderer.shakeOn = e.target.checked; meta.save(); };
 $('#btn-keys-reset').onclick = () => { input.setBindings(DEFAULT_KEYS); meta.data.settings.keys = {}; meta.save(); refreshKeyNames(); renderKeys(); };
+$('#btn-pad-reset').onclick = () => { input.setPad(DEFAULT_PAD); meta.data.settings.pad = {}; meta.save(); renderPad(); };
 $('#btn-fullscreen').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); };
 $('#btn-quit').onclick = () => {
   const b = $('#btn-quit');
@@ -757,6 +845,7 @@ addEventListener('pointerdown', () => audio.unlock(), { once: true });
 const qc = new URLSearchParams(location.search).get('code');
 if (qc) $('#join-code').value = qc.toUpperCase();
 
+initTooltips();
 renderTitle();
 requestAnimationFrame(frame);
 

@@ -20,6 +20,9 @@ export class Net {
     this.socket.on('disconnect', () => this.handlers.disconnect?.());
     this.socket.on('snap', (s) => {
       s._rt = performance.now() / 1000;
+      // tuiles et carte envoyées seulement quand elles changent : on garde les dernières reçues
+      if (s.room.tiles) this.tiles = s.room.tiles; else s.room.tiles = this.tiles || [];
+      if (s.map) this.map = s.map; else s.map = this.map || [];
       this.buf.push(s);
       if (this.buf.length > 40) this.buf.shift();
       this.handlers.events?.(s.ev || [], s);
@@ -59,6 +62,9 @@ export class Net {
   spell() { this.socket.emit('spell'); }
   bomb() { this.socket.emit('bomb'); }
   mark() { this.socket.emit('mark'); }
+  orb() { this.socket.emit('orb'); }
+  potion() { this.socket.emit('potion'); }
+  emote(n) { this.socket.emit('emote', n); }
   sendInput(inp) {
     const s = JSON.stringify([+inp.mx.toFixed(2), +inp.my.toFixed(2), +inp.sx.toFixed(2), +inp.sy.toFixed(2)]);
     const now = performance.now();
@@ -105,8 +111,13 @@ function lerpSnap(a, c, k) {
     return c.proj.map((p) => {
       const q = m.get(p[0]);
       if (!q) return p;
-      return [p[0], q[1] + (p[1] - q[1]) * k, q[2] + (p[2] - q[2]) * k, p[3], p[4], p[5]];
+      return [p[0], q[1] + (p[1] - q[1]) * k, q[2] + (p[2] - q[2]) * k, p[3], p[4], p[5], p[6], p[7]];
     });
   })();
-  return { ...c, players: lerpList(a.players, c.players, k), enemies: lerpList(a.enemies, c.enemies, k), proj };
+  const players = lerpList(a.players, c.players, k).map((p) => {
+    const q = a.players.find((o) => o.id === p.id);
+    if (!q || !p.fam || !q.fam || p.fam.length !== q.fam.length) return p;
+    return { ...p, fam: p.fam.map((f, i) => [f[0], q.fam[i][1] + (f[1] - q.fam[i][1]) * k, q.fam[i][2] + (f[2] - q.fam[i][2]) * k]) };
+  });
+  return { ...c, players, enemies: lerpList(a.enemies, c.enemies, k), proj };
 }

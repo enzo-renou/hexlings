@@ -1,14 +1,14 @@
 // Prédiction côté client (multi) : ton sorcier bouge tout de suite quand tu appuies,
 // sans attendre la réponse du serveur. On se recale doucement sur le serveur ensuite.
 import { Game } from '/shared/game.js';
-import { TILE, VIEW_W, VIEW_H, DIRS } from '/shared/constants.js';
+import { TILE } from '/shared/constants.js';
 
 const fake = {
-  room: { tiles: null }, cleared: false,
+  room: { tiles: null, W: 15, H: 9, pw: 720, ph: 432 }, cleared: false,
   tile: Game.prototype.tile, solidFor: Game.prototype.solidFor,
   doorOpen() { return this.cleared; },
-  lk: [],
-  doorBlocked(tx, ty) { return this.lk.some((d) => DIRS[d].tx === tx && DIRS[d].ty === ty); },
+  blocked: [],
+  doorBlocked(tx, ty) { return this.blocked.some((d) => d[0] === tx && d[1] === ty); },
 };
 
 export class Predictor {
@@ -32,14 +32,15 @@ export class Predictor {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     if (me.dead) {
-      p.x = Math.max(TILE, Math.min(VIEW_W - TILE, p.x));
-      p.y = Math.max(TILE, Math.min(VIEW_H - TILE, p.y));
+      p.x = Math.max(TILE, Math.min(latest.room.W * TILE - TILE, p.x));
+      p.y = Math.max(TILE, Math.min(latest.room.H * TILE - TILE, p.y));
     } else {
-      fake.room.tiles = latest.room.tiles;
-      fake.cleared = latest.room.cleared;
-      fake.lk = latest.room.lk || [];
+      const R = latest.room;
+      fake.room.tiles = R.tiles; fake.room.W = R.W; fake.room.H = R.H; fake.room.pw = R.W * TILE; fake.room.ph = R.H * TILE;
+      fake.cleared = R.cleared;
+      fake.blocked = (R.doors || []).filter((d) => d[6]);
+      p.flags = { flying: !!me.fly };
       Game.prototype.collide.call(fake, p, 'player');
-      if (Game.prototype.pushFromChests(p, latest.pickups || [], me.keys)) Game.prototype.collide.call(fake, p, 'player');
     }
     // recalage sur la position du serveur
     const ex = me.x - p.x, ey = me.y - p.y, err = Math.hypot(ex, ey);

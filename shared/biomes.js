@@ -4,6 +4,8 @@
 //  avec ses couleurs, ses monstres, ses boss et ses obstacles.
 // ============================================================
 
+import { MORE_BIOMES, BIOME_ADD } from './bestiary.js';
+
 export const BIOMES = {
   castle: {
     name: 'Château Hanté',
@@ -101,12 +103,20 @@ export const BIOMES = {
   },
 };
 
-// Les « chapitres » : 2 étages par biome, tiré au hasard entre deux.
+Object.assign(BIOMES, MORE_BIOMES);
+for (const [id, add] of Object.entries(BIOME_ADD)) {
+  const b = BIOMES[id];
+  if (add.enemies) b.enemies = [...b.enemies, ...add.enemies];
+  if (add.bosses) b.bosses = [...b.bosses, ...add.bosses];
+  if (add.finals) b.finals = add.finals;
+}
+
+// Les « chapitres » : 2 étages par biome, tiré au hasard parmi plusieurs.
 export const CHAPTERS = [
-  { floors: [1, 2], options: ['castle', 'forest'] },
-  { floors: [3, 4], options: ['graveyard', 'caves'] },
+  { floors: [1, 2], options: ['castle', 'forest', 'swamp'] },
+  { floors: [3, 4], options: ['graveyard', 'caves', 'sands'] },
   { floors: [5], options: ['crypt'] },
-  { floors: [6, 7], options: ['library', 'volcano'] },
+  { floors: [6, 7], options: ['library', 'volcano', 'clockwork'] },
   { floors: [8, 9], options: ['abyss', 'frost'] },
   { floors: [10], options: ['tower'] },
 ];

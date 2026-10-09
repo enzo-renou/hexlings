@@ -3,10 +3,10 @@ import { Game } from '../shared/game.js';
 import { DT, DIRS, TILE } from '../shared/constants.js';
 
 function run(nPlayers, seed, verbose = false) {
-  const chars = ['pyra', 'glacius', 'sylva', 'volt', 'morgane', 'bricolo'];
+  const chars = ['pyra', 'glacius', 'sylva', 'volt', 'morgane', 'bricolo', 'solaris'];
   const g = new Game({
-    seed, difficulty: seed % 3 === 0 ? 'hard' : 'normal', unlockedItems: ['sackbombs', 'arcanebomb', 'magnet', 'piggy', 'thornarmor', 'glasscannon'],
-    players: Array.from({ length: nPlayers }, (_, i) => ({ id: 'p' + i, name: 'P' + i, charId: chars[(seed + i) % 6], relics: [{ id: 'swift', lvl: 2 }, { id: 'aegis', lvl: 1 }], talents: { dmg: 3, options: 1, bombs: 2, focus: 2, barter: 2 } })),
+    seed, difficulty: ['normal', 'hard', 'hardcore'][seed % 3], unlockedItems: ['sackbombs', 'arcanebomb', 'magnet', 'piggy', 'thornarmor', 'glasscannon'],
+    players: Array.from({ length: nPlayers }, (_, i) => ({ id: 'p' + i, name: 'P' + i, charId: chars[(seed + i) % chars.length], relics: [{ id: 'swift', lvl: 2 }, { id: 'aegis', lvl: 1 }], talents: { dmg: 3, options: 1, bombs: 2, focus: 2, barter: 2 } })),
   });
   let steps = 0, lastFloor = 1, fightT = 0;
   const visited = new Set();
@@ -19,7 +19,10 @@ function run(nPlayers, seed, verbose = false) {
       if (steps % 400 === 0) g.requestSpell(p.id);
       if (steps % 500 === 7) g.requestBomb(p.id);
       if (steps % 300 === 11) g.requestPing(p.id);
-      p.hp = p.maxHp; p.keys = 5; if (g.players.length === 1) p.iframes = 0.2; // quasi invincible pour tester la progression
+      if (steps % 700 === 13) g.requestOrb(p.id);
+      if (steps % 900 === 17) g.requestPotion(p.id);
+      if (steps % 350 === 19) g.requestEmote(p.id, steps % 4);
+      p.hp = p.maxHp; p.keys = 5; p.iframes = 0.2; // quasi invincible pour tester la progression
       if (p.dead && steps % 600 === 0) { p.dead = false; p.hp = 2; }
     }
     g.step(DT);
@@ -42,10 +45,10 @@ function run(nPlayers, seed, verbose = false) {
       const tre = g.fl.rooms.find((r) => r.type === 'treasure');
       const goal = tre.visited ? g.fl.boss : tre;
       const d = nextDir(g, goal);
-      if (d) for (const p of g.players) { p.x = (DIRS[d].tx + 0.5) * TILE; p.y = (DIRS[d].ty + 0.5) * TILE; }
+      if (d) for (const p of g.players) { p.x = (d.tx + 0.5) * TILE; p.y = (d.ty + 0.5) * TILE; }
     }
     if (g.floor !== lastFloor) { lastFloor = g.floor; if (verbose) console.log('  étage', g.floor, 'salles', g.fl.rooms.length, 'objets p0', g.players[0].items.length); }
-    visited.add(g.floor + ':' + g.room.gx + ',' + g.room.gy);
+    visited.add(g.floor + ':' + g.room.id);
   }
   return { state: g.state, floor: g.floor, steps, items: g.players.map((p) => p.items.length), kills: g.runStats.kills };
 }
@@ -53,7 +56,7 @@ function run(nPlayers, seed, verbose = false) {
 function nextDir(g, goal) {
   const start = g.room; const prev = new Map([[start, null]]); const q = [start];
   while (q.length) { const c = q.shift(); if (c === goal) break;
-    for (const d of Object.keys(DIRS)) { if (!c.doors[d]) continue; const n = g.fl.get(c.gx + DIRS[d].dx, c.gy + DIRS[d].dy); if (n && !prev.has(n)) { prev.set(n, [c, d]); q.push(n); } } }
+    for (const d of c.doors) { if (!d.open) continue; const n = g.fl.room(d.to); if (n && !prev.has(n)) { prev.set(n, [c, d]); q.push(n); } } }
   let c = goal, d = null; while (prev.get(c)) { [c, d] = [prev.get(c)[0], prev.get(c)[1]]; if (c === start) return d; } return null;
 }
 let ok = 0;

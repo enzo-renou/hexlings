@@ -2,6 +2,8 @@
 //  INVENTAIRE : liste de tes objets avec ce qu'ils font (touche B)
 // ============================================================
 import { ITEMS, RELICS, SYNERGIES } from '/shared/data.js';
+import { itemIconURL } from './art.js';
+const icon = (id, it) => { const u = itemIconURL(id); return u ? `<img class="icon" src="${u}" width="40" height="40" alt="">` : it.glyph; };
 
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const num = (v) => (Math.round(v * 100) / 100).toString().replace('.', ',');
@@ -64,7 +66,7 @@ export function renderInventory(box, me, relics = []) {
   for (const r of rows) {
     const it = ITEMS[r.id];
     h += `<div class="inv-row${it.cursed ? ' cursed' : ''}${r.active ? ' active' : ''}">
-      <span class="ig">${it.glyph}${r.n > 1 ? `<b>×${r.n}</b>` : ''}</span>
+      <span class="ig" data-item="${r.id}">${icon(r.id, it)}${r.n > 1 ? `<b>×${r.n}</b>` : ''}</span>
       <span class="ib"><span class="in">${esc(it.name)}${r.active ? ' <small>· sort équipé</small>' : ''}${it.cursed ? ' <small>· maudit</small>' : ''}</span>
       <span class="id">${esc(it.desc)}</span><span class="it">${tagHtml(itemTags(it))}</span></span>
     </div>`;
