@@ -31,3 +31,13 @@ export class RNG {
 export function randomSeed() {
   return (Math.random() * 0xffffffff) >>> 0;
 }
+
+// Graine du « défi du jour » : la même pour tout le monde, le même jour (UTC)
+export function todayKey(d = new Date()) {
+  return d.toISOString().slice(0, 10);
+}
+export function dailySeed(key = todayKey()) {
+  let h = 2166136261;
+  for (const c of 'hexlings-' + key) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}

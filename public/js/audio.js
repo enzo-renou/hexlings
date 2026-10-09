@@ -9,6 +9,31 @@ const SCALES = {
   harmonic: [0, 2, 3, 5, 7, 8, 11], whole: [0, 2, 4, 6, 8, 10],
 };
 const PROG = [0, 5, 2, 6];
+
+// Mélodies composées (4 mesures de 16 doubles-croches, en degrés de la gamme)
+// chiffre = note, « . » = silence, « - » = on tient la note
+const THEMES = {
+  march: ['0 . . 2 4 . 2 . 3 . 2 . 1 . . .', '0 . . 2 4 . 7 . 6 . 4 . 5 . . .', '4 . 5 . 6 . 4 . 2 . 3 . 4 . . .', '3 . 2 . 1 . -1 . 0 - - - . . . .'],
+  flowing: ['0 . 2 4 7 . 4 2 3 . 5 7 9 . 7 5', '4 . 2 0 2 . 4 . 5 . 4 2 4 - - .', '7 . 9 7 5 . 4 5 7 . 5 4 2 . 4 .', '3 . 2 1 0 . 1 2 0 - - - . . . .'],
+  dirge: ['0 - - - . . . . 1 - - - . . . .', '0 - - - . . -2 . -1 - - - . . . .', '2 - - - 1 - - - 0 - - - . . . .', '-1 - - - . . . . -2 - - - . . . .'],
+  drip: ['. . 7 . . . . 9 . . . . 11 . . .', '. . 9 . . . . 7 . . . . 4 . . .', '. . 7 . . 8 . . 7 . . . 4 . . .', '. . 2 . . . . 4 . . . . 0 . . .'],
+  mystery: ['0 . 2 . 3 . 6 . 7 . 6 . 3 . 2 .', '1 . 3 . 4 . 6 . 4 - - . . . . .', '0 . 2 . 3 . 6 . 7 . 9 . 10 . 9 .', '7 . 6 . 3 . 2 . 0 - - . . . . .'],
+  driving: ['0 0 7 0 6 0 4 0 3 0 4 0 6 0 4 0', '0 0 7 0 6 0 4 0 3 0 2 0 1 0 2 0', '3 3 10 3 9 3 7 3 6 3 7 3 9 3 7 3', '4 4 7 4 6 4 4 . 3 . 2 . 1 . . .'],
+  floating: ['0 - - 2 - - 4 - - 5 - - 4 - - .', '2 - - 4 - - 6 - - 4 - - 2 - - .', '0 - - 3 - - 5 - - 6 - - 5 - - .', '4 - - 2 - - 1 - - 0 - - - - - .'],
+  twinkly: ['7 . 4 . 9 . 4 . 7 . 4 . 11 . 9 .', '7 . 4 . 9 . 4 . 8 - - . . . . .', '6 . 4 . 7 . 4 . 9 . 7 . 6 . 4 .', '4 . 2 . 3 . 1 . 0 - - . . . . .'],
+  epic: ['0 - - 4 7 - 6 - 4 - - 2 4 - - .', '5 - - 4 2 - 4 - 1 - - . . . . .', '0 - - 4 7 - 9 - 10 - 9 - 7 - 6 -', '7 - - - 6 - 4 - 0 - - - . . . .'],
+  boss: ['0 . 0 . 3 . 0 . 4 . 3 . 1 . 0 .', '0 . 0 . 3 . 0 . 6 . 4 . 3 . 1 .', '7 . 6 . 4 . 3 . 4 . 3 . 1 . -1 .', '0 . 0 . 1 . 3 . 4 - - - 3 - 1 -'],
+};
+const parsed = {};
+for (const [k, bars] of Object.entries(THEMES)) {
+  const steps = bars.flatMap((b) => b.trim().split(/\s+/));
+  parsed[k] = steps.map((tok, i) => {
+    if (tok === '.' || tok === '-') return null;
+    let len = 1;
+    while (steps[i + len] === '-') len++;
+    return { deg: +tok, len };
+  });
+}
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 function init() {
@@ -125,13 +150,14 @@ const music = {
     // basse
     const bassSteps = I === 0 ? [0] : I === 1 ? [0, 6, 8, 14] : [0, 3, 6, 8, 10, 14];
     if (bassSteps.includes(step)) tone(mtof(this.note(deg, -1)), spb * (I === 2 ? 1.8 : 3), { type: I === 2 ? 'sawtooth' : 'triangle', vol: I === 2 ? 0.09 : 0.13, at, dest, filter: 'lowpass', ff: I === 2 ? 700 : 500 });
-    // arpège
-    const pat = [0, 2, 4, 7, 4, 2, 4, 7];
-    const every = I === 0 ? 4 : I === 1 ? 2 : 1;
-    if (step % every === 0) {
-      const d2 = deg + pat[(step / every) % pat.length];
-      const swing = (this.bar === 3 && step >= 12) ? 1 : 0;
-      tone(mtof(this.note(d2 + swing, 1)), spb * (I === 0 ? 3 : 1.4), { type: this.cfg.lead || 'sine', vol: I === 0 ? 0.035 : 0.04, at, dest, filter: 'lowpass', ff: I === 2 ? 2400 : 1600, wet: 0 });
+    // mélodie composée du biome (thème de boss pendant les combats de boss)
+    const mel = parsed[I === 2 ? 'boss' : this.cfg.theme] || parsed.march;
+    const n = mel[this.bar * 16 + step];
+    if (n) tone(mtof(this.note(n.deg, 1)), spb * n.len * 0.95, { type: this.cfg.lead || 'sine', vol: I === 0 ? 0.04 : 0.05, at, dest, filter: 'lowpass', ff: I === 2 ? 2600 : 1800, attack: 0.01 });
+    // petit arpège d'accompagnement en combat
+    if (I >= 1 && step % 2 === 1) {
+      const pat = [0, 2, 4, 2];
+      tone(mtof(this.note(deg + pat[((step - 1) / 2) % 4], 0)), spb * 0.9, { type: 'triangle', vol: 0.022, at, dest, filter: 'lowpass', ff: 1400 });
     }
     // percussions
     if (I >= 1) {
@@ -157,12 +183,21 @@ export const audio = {
   ready() { return !!ctx && !this.muted; },
   unlock() {
     try {
-      if (!ctx) init();
+      if (!ctx) { init(); this.apply(); }
       if (ctx.state === 'suspended') ctx.resume();
     } catch { /* audio indisponible */ }
   },
-  setMuted(m) { this.muted = m; if (master) master.gain.value = m ? 0 : 0.7; },
-  setMusicMuted(m) { this.musicMuted = m; if (musicBus) musicBus.gain.value = m ? 0 : 0.32; },
+  sfxVol: 0.8,
+  musicVol: 0.6,
+  apply() {
+    if (!ctx) return;
+    master.gain.value = this.muted ? 0 : 0.7;
+    sfxBus.gain.value = 0.7 * this.sfxVol;
+    musicBus.gain.value = this.musicMuted ? 0 : 0.42 * this.musicVol;
+  },
+  setMuted(m) { this.muted = m; this.apply(); },
+  setMusicMuted(m) { this.musicMuted = m; this.apply(); },
+  setVolumes(sfx, music) { this.sfxVol = sfx; this.musicVol = music; this.apply(); },
   music(cfg) { if (!ctx) return; if (cfg) music.start(cfg); else music.stop(); if (cfg) music.cfg = cfg; },
   intensity(i) { music.intensity = i; },
   shoot(charId, mine) {
@@ -214,6 +249,21 @@ export const audio = {
       case 'floor': [262, 330, 392, 523, 659].forEach((f, i) => tone(f, 0.4, { type: 'triangle', vol: 0.12, delay: i * 0.09, wet: 0.5 })); break;
       case 'win': [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, i) => tone(f, 0.35, { type: 'triangle', vol: 0.18, delay: i * 0.14, wet: 0.5 })); break;
       case 'lose': [392, 330, 262, 196].forEach((f, i) => tone(f, 0.5, { type: 'triangle', vol: 0.16, delay: i * 0.22, wet: 0.5 })); break;
+      case 'bombset': noise(0.3, { filter: 'highpass', ff: 3000, vol: 0.06 }); tone(500, 0.06, { type: 'square', vol: 0.05 }); break;
+      case 'bigboom': noise(0.8, { filter: 'lowpass', ff: 1400, fto: 60, vol: 0.6 }); tone(70, 0.6, { to: 25, vol: 0.5 }); break;
+      case 'rock': noise(0.3, { filter: 'lowpass', ff: 900, vol: 0.3 }); for (let i = 0; i < 3; i++) tone(200 + Math.random() * 200, 0.05, { type: 'square', vol: 0.04, delay: 0.05 + i * 0.05 }); break;
+      case 'secret': [523, 784, 659, 1046].forEach((f, i) => tone(f, 0.35, { type: 'sine', vol: 0.14, delay: i * 0.12, wet: 0.6 })); break;
+      case 'chest': tone(300, 0.15, { to: 500, type: 'sawtooth', vol: 0.06, filter: 'lowpass', ff: 1200 }); [784, 988, 1175].forEach((f, i) => tone(f, 0.2, { type: 'triangle', vol: 0.1, delay: 0.12 + i * 0.06 })); break;
+      case 'nokey': tone(160, 0.12, { type: 'square', vol: 0.08 }); tone(120, 0.18, { type: 'square', vol: 0.08, delay: 0.1 }); break;
+      case 'unlock': tone(1200, 0.04, { type: 'square', vol: 0.08 }); tone(800, 0.06, { type: 'square', vol: 0.08, delay: 0.06 }); noise(0.1, { filter: 'highpass', ff: 3000, vol: 0.08, delay: 0.1 }); break;
+      case 'pickup': tone(660, 0.06, { type: 'triangle', vol: 0.12 }); tone(880, 0.1, { type: 'triangle', vol: 0.12, delay: 0.05 }); break;
+      case 'sacrifice': tone(110, 1.2, { type: 'sine', vol: 0.3, wet: 0.6 }); tone(220, 1.0, { type: 'triangle', vol: 0.1, wet: 0.6 }); noise(0.2, { filter: 'lowpass', ff: 600, vol: 0.2 }); break;
+      case 'synergy': for (let i = 0; i < 8; i++) tone(800 + i * 150, 0.15, { type: 'sine', vol: 0.08, delay: i * 0.04, wet: 0.5 }); break;
+      case 'wave': [196, 262, 330].forEach((f, i) => tone(f, 0.4, { type: 'sawtooth', vol: 0.08, delay: i * 0.12, filter: 'lowpass', ff: 1500 })); break;
+      case 'achievement': [523, 659, 784, 1046, 1318, 1568].forEach((f, i) => tone(f, 0.3, { type: 'square', vol: 0.06, delay: i * 0.08, wet: 0.4 })); break;
+      case 'collapse': noise(0.6, { filter: 'lowpass', ff: 500, fto: 80, vol: 0.4 }); break;
+      case 'toxic': noise(0.4, { filter: 'bandpass', ff: 600, q: 3, vol: 0.12 }); tone(200, 0.3, { to: 400, vol: 0.06, vib: 20 }); break;
+      case 'ping': tone(1320, 0.12, { vol: 0.16, wet: 0.4 }); tone(1760, 0.18, { vol: 0.14, delay: 0.1, wet: 0.4 }); break;
       case 'pdie': tone(400, 0.8, { to: 80, type: 'triangle', vol: 0.2, vib: 6, wet: 0.5 }); break;
       case 'revive': [262, 392, 523, 784, 1046].forEach((f, i) => tone(f, 0.3, { vol: 0.15, delay: i * 0.06, wet: 0.5 })); break;
     }

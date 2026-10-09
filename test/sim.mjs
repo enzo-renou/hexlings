@@ -5,8 +5,8 @@ import { DT, DIRS, TILE } from '../shared/constants.js';
 function run(nPlayers, seed, verbose = false) {
   const chars = ['pyra', 'glacius', 'sylva', 'volt', 'morgane', 'bricolo'];
   const g = new Game({
-    seed,
-    players: Array.from({ length: nPlayers }, (_, i) => ({ id: 'p' + i, name: 'P' + i, charId: chars[(seed + i) % 6], relics: [{ id: 'swift', lvl: 2 }, { id: 'aegis', lvl: 1 }] })),
+    seed, difficulty: seed % 3 === 0 ? 'hard' : 'normal', unlockedItems: ['sackbombs', 'arcanebomb', 'magnet', 'piggy', 'thornarmor', 'glasscannon'],
+    players: Array.from({ length: nPlayers }, (_, i) => ({ id: 'p' + i, name: 'P' + i, charId: chars[(seed + i) % 6], relics: [{ id: 'swift', lvl: 2 }, { id: 'aegis', lvl: 1 }], talents: { dmg: 3, options: 1, bombs: 2, focus: 2, barter: 2 } })),
   });
   let steps = 0, lastFloor = 1, fightT = 0;
   const visited = new Set();
@@ -17,7 +17,9 @@ function run(nPlayers, seed, verbose = false) {
       const t = steps / 60;
       g.setInput(p.id, { mx: Math.sin(t + p.idx), my: Math.cos(t * 1.3 + p.idx), sx: Math.cos(t * 2), sy: Math.sin(t * 2) });
       if (steps % 400 === 0) g.requestSpell(p.id);
-      p.hp = p.maxHp; if (g.players.length === 1) p.iframes = 0.2; // quasi invincible pour tester la progression
+      if (steps % 500 === 7) g.requestBomb(p.id);
+      if (steps % 300 === 11) g.requestPing(p.id);
+      p.hp = p.maxHp; p.keys = 5; if (g.players.length === 1) p.iframes = 0.2; // quasi invincible pour tester la progression
       if (p.dead && steps % 600 === 0) { p.dead = false; p.hp = 2; }
     }
     g.step(DT);

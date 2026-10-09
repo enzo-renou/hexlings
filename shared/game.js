@@ -5,18 +5,23 @@
 import {
   TILE, ROOM_W, ROOM_H, VIEW_W, VIEW_H, FLOORS, DIRS, DIR_NAMES, OPP,
   T_FLOOR, T_WALL, T_ROCK, T_PIT, T_DOOR, T_POOP, T_FIRE, T_POT, T_GPOOP, isDestructible,
+  T_SPIKES, T_TURRET, T_CRUMBLE, isWalkable,
 } from './constants.js';
 import { BIOMES, pickBiomes } from './biomes.js';
 import { RNG, randomSeed } from './rng.js';
-import { CHARACTERS, ITEMS, RELICS, RELIC_MAX_LEVEL, ENEMIES, BOSSES } from './data.js';
+import { CHARACTERS, ITEMS, RELICS, RELIC_MAX_LEVEL, ENEMIES, BOSSES, SYNERGIES, CHAMPIONS, TALENTS } from './data.js';
 import { generateFloor } from './floorgen.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const TAU = Math.PI * 2;
 
 export class Game {
-  constructor({ seed, players }) {
+  constructor({ seed, players, difficulty, daily, unlockedItems }) {
     this.seed = seed ?? randomSeed();
+    this.difficulty = difficulty === 'hard' ? 'hard' : 'normal';
+    this.daily = daily || null;
+    this.unlocked = new Set(unlockedItems || []);
+    this.bombs = [];
     this.rng = new RNG(this.seed);
     this.nextId = 1;
     this.events = [];
@@ -25,7 +30,7 @@ export class Game {
     this.pendingEnd = null;
     this.freezeT = 0;
     this.roomVer = 0;
-    this.runStats = { kills: 0, rooms: 0, items: 0, bosses: 0 };
+    this.runStats = { kills: 0, rooms: 0, items: 0, bosses: 0, secrets: 0, coins: 0 };
     this.seenItems = new Set();
     this.biomes = pickBiomes(this.rng);
     this.descendT = 0;
@@ -52,11 +57,21 @@ export class Game {
       iframes: 0, fireCd: 0, dead: false, buffs: { haste: 0, shield: 0 },
       revive: 0, aegis: 0, relics, input: { mx: 0, my: 0, sx: 0, sy: 0 },
       spellReq: false, atDoor: null, orbA: 0, kills: 0, onTrap: false,
+      bombs: 1, keys: 0, bombReq: false, pingReq: false, pingCd: 0, syn: new Set(), revProg: 0, away: false, sacCount: 0, hitInBoss: false,
     };
+    // talents (arbre de progression permanente)
+    const tl = {};
+    for (const [k, v] of Object.entries(info.talents || {})) if (TALENTS[k]) tl[k] = clamp(v | 0, 0, TALENTS[k].max);
+    p.talents = tl;
+    p.coins += 3 * (tl.coins || 0);
+    p.bombs += tl.bombs || 0;
+    p.keys += tl.keys || 0;
+    p.discount = tl.barter || 0;
+    if (tl.secondwind) p.revive++;
     const lvl = (id) => (relics.find((r) => r.id === id) || {}).lvl || 0;
     p.relicLvl = lvl;
     if (ch.spell) p.active = { id: ch.spell, charge: 0, max: ITEMS[ch.spell].active.charge };
-    if (lvl('awaken') && p.active) p.active.charge = p.active.max;
+    if ((lvl('awaken') || tl.focus) && p.active) p.active.charge = p.active.max;
     for (const r of relics) if (RELICS[r.id].start) RELICS[r.id].start(p, r.lvl);
     this.recompute(p, true);
     p.hp = p.maxHp;
@@ -86,13 +101,25 @@ export class Game {
     for (const id of p.items) apply(ITEMS[id]);
     for (const c of p.chaos) apply(c);
     for (const r of p.relics) if (RELICS[r.id].apply) RELICS[r.id].apply(acc, r.lvl);
+    const tl = p.talents || {};
+    if (tl.hp) acc.add.maxHp += tl.hp;
+    if (tl.dmg) acc.mult.dmg *= 1 + 0.04 * tl.dmg;
+    if (tl.rate) acc.mult.fireDelay /= 1 + 0.04 * tl.rate;
+    if (tl.spd) acc.mult.speed *= 1 + 0.04 * tl.spd;
+    if (tl.luck) acc.add.luck += 0.5 * tl.luck;
+    // synergies
+    const syn = new Set(SYNERGIES.filter((sy) => sy.need(flags, { orbit: (ch.orbit || 0) + acc.add.orbit })).map((sy) => sy.id));
+    if (syn.has('lance')) acc.mult.dmg *= 1.3;
+    if (syn.has('phantom')) acc.mult.range *= 1.3;
+    if (!initial) for (const id of syn) if (!p.syn.has(id)) this.emit({ k: 'synergy', pid: p.id, id });
+    p.syn = syn;
     const s = {
       dmg: Math.max(0.5, (base.dmg + acc.add.dmg) * acc.mult.dmg),
       fireDelay: Math.max(0.08, (base.fireDelay + acc.add.fireDelay) * acc.mult.fireDelay),
       speed: clamp((base.speed + acc.add.speed) * acc.mult.speed, 90, 340),
       range: clamp((base.range + acc.add.range) * acc.mult.range, 120, 750),
       shotSpeed: clamp((base.shotSpeed + acc.add.shotSpeed) * acc.mult.shotSpeed, 180, 720),
-      luck: base.luck + acc.add.luck,
+      luck: Math.round((base.luck + acc.add.luck) * 10) / 10,
       orbit: Math.min(4, (ch.orbit || 0) + acc.add.orbit),
     };
     const newMax = clamp(base.maxHp + acc.add.maxHp, 2, 24);
@@ -108,6 +135,7 @@ export class Game {
       const it = ITEMS[id];
       if (this.seenItems.has(id)) return false;
       if (!it.pools.includes(pool)) return false;
+      if (it.unlock && !this.unlocked.has(id)) return false;
       if (passiveOnly && it.active) return false;
       return true;
     });
@@ -128,6 +156,8 @@ export class Game {
       p.chaos.push({ mult, add: { luck: this.rng.int(-1, 2) } });
     }
     if (it.coins) p.coins = Math.min(99, p.coins + it.coins);
+    if (it.bombs) p.bombs = Math.min(99, p.bombs + it.bombs);
+    if (it.keys) p.keys = Math.min(99, p.keys + it.keys);
     this.recompute(p);
     if (it.heal) p.hp = Math.min(p.maxHp, p.hp + it.heal);
     if (!silent) {
@@ -136,12 +166,12 @@ export class Game {
     }
   }
 
-  alive() { return this.players.filter((p) => !p.dead); }
+  alive() { return this.players.filter((p) => !p.dead && !p.away); }
 
   nearestPlayer(x, y) {
     let best = null, bd = Infinity;
     for (const p of this.players) {
-      if (p.dead) continue;
+      if (p.dead || p.away) continue;
       const d = (p.x - x) ** 2 + (p.y - y) ** 2;
       if (d < bd) { bd = d; best = p; }
     }
@@ -159,6 +189,30 @@ export class Game {
     const p = this.players.find((q) => q.id === pid);
     if (p) p.spellReq = true;
   }
+  requestBomb(pid) { const p = this.players.find((q) => q.id === pid); if (p) p.bombReq = true; }
+  requestPing(pid) { const p = this.players.find((q) => q.id === pid); if (p) p.pingReq = true; }
+
+  // un joueur rejoint une partie en cours
+  addPlayer(info) {
+    if (this.players.some((p) => p.id === info.id)) return;
+    const p = this.makePlayer(info, this.players.length);
+    const ref = this.alive()[0] || this.players[0];
+    p.x = ref ? clamp(ref.x + 30 * (this.players.length % 2 ? 1 : -1), TILE + 14, VIEW_W - TILE - 14) : VIEW_W / 2; p.y = ref ? ref.y + 20 : VIEW_H / 2;
+    this.collide(p, 'player');
+    p.iframes = 3;
+    this.players.push(p);
+    this.totalPlayers = Math.max(this.totalPlayers, this.players.length);
+    this.emit({ k: 'join', pid: p.id, name: p.name });
+  }
+  // joueur déconnecté : il attend (invincible) qu'on revienne
+  setAway(pid, away) {
+    const p = this.players.find((q) => q.id === pid);
+    if (!p) return;
+    p.away = away;
+    p.input = { mx: 0, my: 0, sx: 0, sy: 0 };
+    if (!away) p.iframes = 2;
+    this.emit({ k: away ? 'away' : 'back', pid, name: p.name });
+  }
 
   removePlayer(pid) {
     this.players = this.players.filter((p) => p.id !== pid);
@@ -174,18 +228,23 @@ export class Game {
     this.descendT = 0;
     this.enemies = [];
     this.projs = [];
+    this.bombs = [];
     this.trapdoor = null;
     for (const p of this.players) {
       if (p.dead) { p.dead = false; p.hp = Math.min(p.maxHp, 2); p.iframes = 2; }
       p.aegis = p.relicLvl('aegis');
       if (p.relicLvl('awaken') >= 2 && p.active) p.active.charge = p.active.max;
+      if ((p.talents.focus || 0) >= 2 && p.active && n > 1) p.active.charge = Math.min(p.active.max, p.active.charge + 1);
+      if (p.flags.bloodmoon && n > 1 && p.hp > 1) { p.hp -= 1; this.emit({ k: 'hurt', pid: p.id, x: p.x, y: p.y }); }
     }
     this.enterRoom(this.fl.start, null);
     this.emit({ k: 'floor', n, name: this.biome.name, biome: this.biomeId });
   }
 
   enterRoom(room, fromDir) {
+    const prev = this.room;
     this.room = room;
+    this.bombs = [];
     if (!room.visited) this.runStats.rooms++;
     room.visited = true;
     this.projs = [];
@@ -213,9 +272,16 @@ export class Game {
       p.onTrap = false;
     });
     if (!room.populated) this.populate(room);
+    // les lunettes de vérité ouvrent les passages secrets
+    if (this.players.some((p) => p.flags.xray)) for (const d of DIR_NAMES) if (room.hidden && room.hidden[d]) this.revealSecret(room, d, true);
     if (!room.cleared) {
-      if (room.type === 'boss') this.spawnBoss();
+      if (room.type === 'boss') { this.spawnBoss(); for (const p of this.players) p.hitInBoss = false; }
+      else if (room.type === 'challenge') this.startChallenge(room);
       else this.spawnRoomEnemies(room);
+    }
+    // les portes de la salle maudite griffent au passage
+    if (fromDir && prev && (room.type === 'curse' || prev.type === 'curse')) {
+      for (const p of this.alive()) { p.iframes = 0; this.hurtPlayer(p, 1); }
     }
     this.emit({ k: 'room', type: room.type, cleared: room.cleared, dir: fromDir });
   }
@@ -241,15 +307,33 @@ export class Game {
         room.pickups.push(this.makePickup(this.rng.chance(0.5) ? 'coin' : 'heart', cx, cy));
       }
     } else if (room.type === 'treasure') {
-      const n = Math.min(4, this.players.length);
-      for (let i = 0; i < n; i++) room.pickups.push(this.makePickup('item', cx + (i - (n - 1) / 2) * 96, cy, { item: this.rollItem('treasure') }));
+      // un objet par joueur (+1 avec le talent « Œil du Trésor ») ; chacun n'en prend qu'un
+      const n = Math.min(5, this.players.length + (this.players.some((p) => p.talents.options) ? 1 : 0));
+      for (let i = 0; i < n; i++) room.pickups.push(this.makePickup('item', cx + (i - (n - 1) / 2) * 90, cy, { item: this.rollItem('treasure'), group: 'tr' }));
+      room.takenBy = [];
     } else if (room.type === 'shop') {
-      const slots = this.floor >= 3 ? 4 : 3;
-      for (let i = 0; i < slots; i++) {
-        const x = cx + (i - (slots - 1) / 2) * 110;
-        if (i === slots - 1) room.pickups.push(this.makePickup('heart', x, cy, { price: 3 }));
-        else room.pickups.push(this.makePickup('item', x, cy, { item: this.rollItem('shop'), price: 12 + this.floor }));
+      const goods = [
+        () => this.makePickup('item', 0, cy - 20, { item: this.rollItem('shop'), price: 12 + this.floor }),
+        () => this.makePickup('item', 0, cy - 20, { item: this.rollItem('shop'), price: 12 + this.floor }),
+        () => this.makePickup('heart', 0, cy, { price: 3 }),
+        () => this.makePickup(this.rng.chance(0.5) ? 'bomb' : 'key', 0, cy, { price: 5 }),
+      ];
+      if (this.floor >= 3) goods.push(() => this.makePickup(this.rng.chance(0.5) ? 'bomb' : 'key', 0, cy, { price: 5 }));
+      goods.forEach((g, i) => { const pk = g(); pk.x = cx + (i - (goods.length - 1) / 2) * 100; room.pickups.push(pk); });
+    } else if (room.type === 'secret') {
+      if (this.rng.chance(0.4)) room.pickups.push(this.makePickup('item', cx, cy, { item: this.rollItem('treasure') }));
+      else {
+        const loot = ['coin', 'coin', 'coin', 'bomb', 'key', 'heart', 'chest'];
+        for (let i = 0; i < 6; i++) room.pickups.push(this.makePickup(this.rng.pick(loot), cx + this.rng.range(-90, 90), cy + this.rng.range(-50, 50)));
       }
+    } else if (room.type === 'curse') {
+      room.pickups.push(this.makePickup('item', cx, cy, { item: this.rollItem('curse') }));
+      if (this.rng.chance(0.5)) room.pickups.push(this.makePickup('gchest', cx + 110, cy));
+    } else if (room.type === 'sacrifice') {
+      room.pickups.push(this.makePickup('altar', cx, cy));
+      room.sacCount = 0;
+    } else if (room.type === 'challenge') {
+      room.wavesLeft = this.floor >= 5 ? 3 : 2;
     }
   }
 
@@ -258,25 +342,35 @@ export class Game {
   }
 
   enemyCountFor() {
-    return Math.min(9, this.rng.int(2, 4) + Math.floor(this.floor / 2));
+    return Math.min(10, this.rng.int(2, 4) + Math.floor(this.floor / 2) + (this.difficulty === 'hard' ? 1 : 0));
   }
 
-  spawnRoomEnemies(room) {
+  startChallenge(room) {
+    this.spawnRoomEnemies(room, 2);
+    this.emit({ k: 'wave', n: 1, total: room.wavesLeft });
+  }
+
+  rollChampion() {
+    const ch = 0.03 + this.floor * 0.008 + (this.difficulty === 'hard' ? 0.04 : 0);
+    return this.rng.chance(ch) ? this.rng.pick(Object.keys(CHAMPIONS)) : null;
+  }
+
+  spawnRoomEnemies(room, bonus = 0) {
     const pool = this.biome.enemies.map((id) => ({ id, weight: ENEMIES[id].weight || 1 }));
     const spots = this.rng.shuffle(this.freeTiles(170));
-    const n = Math.min(spots.length, this.enemyCountFor());
+    const n = Math.min(spots.length, this.enemyCountFor() + bonus);
     // parfois une salle « thème » avec un seul type d'ennemi
     const theme = this.rng.chance(0.3) ? this.rng.weighted(pool).id : null;
     for (let i = 0; i < n; i++) {
       const type = theme || this.rng.weighted(pool).id;
-      this.spawnEnemy(type, spots[i].x, spots[i].y);
+      this.spawnEnemy(type, spots[i].x, spots[i].y, { champ: this.rollChampion() });
     }
     room.combat = true;
     if (!n) room.cleared = true;
   }
 
   hpScale() {
-    return (1 + 0.2 * (this.floor - 1)) * (1 + 0.45 * (this.totalPlayers - 1));
+    return (1 + 0.2 * (this.floor - 1)) * (1 + 0.45 * (this.totalPlayers - 1)) * (this.difficulty === 'hard' ? 1.35 : 1);
   }
 
   spawnEnemy(type, x, y, extra = {}) {
@@ -289,6 +383,12 @@ export class Game {
       hitT: 0, slowT: 0, burnT: 0, burnDps: 0, poisonT: 0, poisonDps: 0, dotT: 0.5,
       spawnT: 0.6, boss: false, dead: false, ...extra,
     };
+    if (e.champ) {
+      const c = CHAMPIONS[e.champ];
+      e.hp = e.maxHp = hp * c.hp;
+      if (c.speed) e.speed *= c.speed;
+      e.r = Math.round(d.r * 1.15);
+    }
     this.enemies.push(e);
     return e;
   }
@@ -301,7 +401,7 @@ export class Game {
     const elite = id.endsWith('+');
     const baseId = id.replace('+', '');
     const bd = BOSSES[baseId];
-    const hp = bd.hp * (elite ? 2.3 : 1) * (1 + 0.12 * (this.floor - 1)) * (1 + 0.45 * (this.totalPlayers - 1));
+    const hp = bd.hp * (elite ? 2.3 : 1) * (1 + 0.12 * (this.floor - 1)) * (1 + 0.45 * (this.totalPlayers - 1)) * (this.difficulty === 'hard' ? 1.3 : 1);
     const e = {
       id: this.nextId++, type: baseId, bdef: bd, def: { name: bd.name, fly: bd.fly }, boss: true, elite,
       name: elite ? bd.name + ' Ancestral' : bd.name,
@@ -328,7 +428,8 @@ export class Game {
     if (t === T_FLOOR) return false;
     if (t === T_WALL) return true;
     if (t === T_DOOR) return !(kind === 'player' && this.doorOpen());
-    if (isDestructible(t)) return kind === 'player' || kind === 'walk';
+    if (t === T_SPIKES || t === T_CRUMBLE) return false;
+    if (isDestructible(t) || t === T_TURRET) return kind === 'player' || kind === 'walk';
     if (kind === 'ghost') return false; // traverse rochers & fosses
     if (kind === 'fly') return false;   // vole au-dessus
     return true; // rocher ou fosse pour ceux qui marchent
@@ -394,7 +495,7 @@ export class Game {
         const nx = x + dx, ny = y + dy;
         if (nx <= 0 || ny <= 0 || nx >= ROOM_W - 1 || ny >= ROOM_H - 1) continue;
         const ni = ny * ROOM_W + nx;
-        if (flow[ni] !== -1 || this.room.tiles[ni] !== T_FLOOR) continue;
+        if (flow[ni] !== -1 || !isWalkable(this.room.tiles[ni])) continue;
         flow[ni] = flow[i] + 1;
         q.push(ni);
       }
@@ -413,7 +514,7 @@ export class Game {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
       const nx = tx + dx, ny = ty + dy;
       if (nx <= 0 || ny <= 0 || nx >= ROOM_W - 1 || ny >= ROOM_H - 1) continue;
-      if (dx && dy && (this.room.tiles[ty * ROOM_W + nx] !== T_FLOOR || this.room.tiles[ny * ROOM_W + tx] !== T_FLOOR)) continue;
+      if (dx && dy && (!isWalkable(this.room.tiles[ty * ROOM_W + nx]) || !isWalkable(this.room.tiles[ny * ROOM_W + tx]))) continue;
       const v = this.flow[ny * ROOM_W + nx];
       if (v !== -1 && v < bv) { bv = v; best = [nx, ny]; }
     }
@@ -452,6 +553,9 @@ export class Game {
       return;
     }
     this.updatePlayers(dt);
+    this.updateBombs(dt);
+    this.updateTraps(dt);
+    this.updateRevive(dt);
     if (this.freezeT <= 0) this.updateEnemies(dt);
     this.updateProjectiles(dt);
     this.enemies = this.enemies.filter((e) => !e.dead);
@@ -463,8 +567,11 @@ export class Game {
 
   updatePlayers(dt) {
     for (const p of this.players) {
+      if (p.away) { p.vx = p.vy = 0; p.atDoor = null; continue; }
       p.iframes = Math.max(0, p.iframes - dt);
       p.fireCd -= dt;
+      p.pingCd -= dt;
+      if (p.pingReq) { p.pingReq = false; if (p.pingCd <= 0) { p.pingCd = 0.8; this.doPing(p); } }
       p.buffs.haste = Math.max(0, p.buffs.haste - dt);
       p.buffs.shield = Math.max(0, p.buffs.shield - dt);
       p.orbA += dt * 3;
@@ -497,6 +604,24 @@ export class Game {
       else if (ml > 0.1) { p.fx = mx / Math.max(ml, 1); p.fy = my / Math.max(ml, 1); }
       if (sl > 0.2 && p.fireCd <= 0) this.fire(p, sx / sl, sy / sl);
       if (p.spellReq) { p.spellReq = false; this.useSpell(p); }
+      if (p.bombReq) {
+        p.bombReq = false;
+        if (p.bombs > 0) {
+          p.bombs--;
+          this.bombs.push({ id: this.nextId++, x: p.x, y: p.y + 6, t: 1.5, pid: p.id, big: !!p.flags.arcaneBombs });
+          this.emit({ k: 'bombset', x: p.x, y: p.y });
+        }
+      }
+      // piques et sol fragile
+      {
+        const ti = Math.floor(p.y / TILE) * ROOM_W + Math.floor(p.x / TILE);
+        const t = this.room.tiles[ti];
+        if (t === T_SPIKES && this.spikesUp()) this.hurtPlayer(p, 1);
+        if (t === T_CRUMBLE) {
+          this.room.crumble = this.room.crumble || {};
+          if (this.room.crumble[ti] == null) { this.room.crumble[ti] = 0.7; this.emit({ k: 'crack', x: (ti % ROOM_W + 0.5) * TILE, y: ((ti / ROOM_W | 0) + 0.5) * TILE }); }
+        }
+      }
       // sur une porte ?
       const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
       p.atDoor = null;
@@ -510,7 +635,7 @@ export class Game {
             if (e.dead || e.airborne || e.inv) continue;
             if ((e.x - o.x) ** 2 + (e.y - o.y) ** 2 < (e.r + 9) ** 2) {
               e.orbCd = (e.orbCd || 0) - dt;
-              if (e.orbCd <= 0) { e.orbCd = 0.25; this.damageEnemy(e, p.stats.dmg * 0.8, p.id); }
+              if (e.orbCd <= 0) { e.orbCd = 0.25; this.damageEnemy(e, p.stats.dmg * 0.8 * (p.syn.has('bloodorbs') ? 2 : 1), p.id); }
             }
           }
         }
@@ -531,7 +656,7 @@ export class Game {
     const f = p.flags, s = p.stats;
     p.fireCd = s.fireDelay * (p.buffs.haste > 0 ? 0.5 : 1);
     const base = Math.atan2(ay, ax);
-    const spreads = f.triple ? [-0.2, 0, 0.2] : [0];
+    const spreads = p.syn.has('swarm') ? [-0.36, -0.18, 0, 0.18, 0.36] : f.triple ? [-0.2, 0, 0.2] : [0];
     const dirs = f.quad ? [0, Math.PI / 2, Math.PI, -Math.PI / 2] : f.backShot ? [0, Math.PI] : [0];
     const offs = f.double ? [-7, 7] : [0];
     const r = (5 + Math.min(5, s.dmg * 0.35)) * (f.big ? 1.5 : 1);
@@ -578,7 +703,15 @@ export class Game {
   }
 
   hurtPlayer(p, amount) {
-    if (p.dead || p.iframes > 0 || p.buffs.shield > 0 || this.pendingEnd) return;
+    if (p.dead || p.away || p.iframes > 0 || p.buffs.shield > 0 || this.pendingEnd || this.descendT > 0) return;
+    if (p.flags.glass) amount *= 2;
+    if (this.room.type === 'boss') p.hitInBoss = true;
+    if (p.flags.thorns) {
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * TAU;
+        (this.inProj ? this.newProjs : this.projs).push({ id: this.nextId++, team: 'p', pid: p.id, c: 'thorn', x: p.x, y: p.y, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, r: 6, dmg: p.stats.dmg * 1.2, life: 0.6, fl: { pierce: true }, hits: [], bounces: 0 });
+      }
+    }
     if (p.aegis > 0) {
       p.aegis--;
       p.iframes = 1;
@@ -603,7 +736,7 @@ export class Game {
     }
   }
 
-  enemyDmg() { return this.floor >= 6 ? 2 : 1; }
+  enemyDmg() { return this.floor >= (this.difficulty === 'hard' ? 4 : 6) ? 2 : 1; }
 
   // ---------------------------------------------------------- monstres
   updateEnemies(dt) {
@@ -624,6 +757,15 @@ export class Game {
         if (e.poisonT > 0) dot += e.poisonDps * 0.5;
         if (dot > 0) { this.damageEnemy(e, dot, e.lastHitBy, true); if (e.dead) continue; }
       }
+      if (e.champ === 'green' && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * CHAMPIONS.green.regen * dt);
+      if (e.burnT > 0 && e.poisonT > 0 && this.players.some((p) => p.syn.has('toxicfire'))) {
+        e.toxT = (e.toxT || 0) - dt;
+        if (e.toxT <= 0) {
+          e.toxT = 1.2;
+          this.emit({ k: 'toxic', x: e.x, y: e.y });
+          for (const o of this.enemies) if (!o.dead && o !== e && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 < 60 ** 2) this.damageEnemy(o, e.poisonDps + e.burnDps, e.lastHitBy, true);
+        }
+      }
       const target = this.nearestPlayer(e.x, e.y);
       const slow = e.slowT > 0 ? 0.5 : 1;
       if (e.boss) this.updateBoss(e, dt, target, slow);
@@ -637,7 +779,7 @@ export class Game {
       // contact
       if (!e.airborne && !e.inv && !(e.fade > 0.3)) {
         for (const p of this.players) {
-          if (p.dead) continue;
+          if (p.dead || p.away) continue;
           if ((p.x - e.x) ** 2 + (p.y - e.y) ** 2 < (e.r + p.r - 4) ** 2) this.hurtPlayer(p, this.enemyDmg());
         }
       }
@@ -659,7 +801,7 @@ export class Game {
     const dist = Math.hypot(dx, dy) || 1;
     const aim = Math.atan2(dy, dx);
     e.t -= dt;
-    e.cd -= dt * slow;
+    e.cd -= dt * slow * (e.champ === 'blue' ? 1.45 : 1);
     switch (d.ai) {
       case 'chase': {
         const [ux, uy] = this.pathDir(e, target);
@@ -988,6 +1130,14 @@ export class Game {
     if (!e.boss && this.rng.chance(0.05 + 0.02 * Math.max(0, p ? p.stats.luck : 0))) {
       this.room.pickups.push(this.makePickup('coin', e.x, e.y));
     }
+    if (e.champ) {
+      const c = e.champ;
+      if (c === 'red' && this.rng.chance(0.5)) this.room.pickups.push(this.makePickup('heart', e.x, e.y));
+      if (c === 'gold') for (let i = 0; i < this.rng.int(3, 4); i++) this.room.pickups.push(this.makePickup('coin', e.x + this.rng.range(-14, 14), e.y + this.rng.range(-10, 10)));
+      if (c === 'green' && this.rng.chance(0.6)) this.room.pickups.push(this.makePickup('bomb', e.x, e.y));
+      if (c === 'blue' && this.rng.chance(0.4)) this.room.pickups.push(this.makePickup('key', e.x, e.y));
+      if (c === 'purple') { for (let i = 0; i < 8; i++) this.shootE(e.x, e.y, (i * TAU) / 8, 160, { c: 'e2' }); }
+    }
     if (e.boss) this.onBossDeath(e);
   }
 
@@ -995,7 +1145,7 @@ export class Game {
     this.runStats.bosses++;
     for (const m of this.enemies) if (!m.dead && !m.boss) { m.dead = true; this.emit({ k: 'die', x: m.x, y: m.y, t: m.type, r: m.r }); }
     this.projs = this.projs.filter((pr) => pr.team === 'p');
-    this.emit({ k: 'bossdown', name: e.name, floor: this.floor });
+    this.emit({ k: 'bossdown', name: e.name, floor: this.floor, nohit: this.players.filter((p) => !p.dead && !p.hitInBoss).map((p) => p.id) });
     if (this.floor === 5) this.emit({ k: 'unlock', char: 'morgane' });
     const cx = VIEW_W / 2, cy = VIEW_H / 2;
     if (this.floor >= FLOORS) {
@@ -1014,11 +1164,18 @@ export class Game {
     this.emit({ k: 'boom', x, y });
     const tx0 = Math.floor(x / TILE), ty0 = Math.floor(y / TILE);
     for (let ty = ty0 - 1; ty <= ty0 + 1; ty++) for (let tx = tx0 - 1; tx <= tx0 + 1; tx++) {
-      if (Math.hypot((tx + 0.5) * TILE - x, (ty + 0.5) * TILE - y) < 70) this.hitTile(tx, ty, 99);
+      if (Math.hypot((tx + 0.5) * TILE - x, (ty + 0.5) * TILE - y) < 70) this.hitTile(tx, ty, 99, pid);
     }
     for (const e of this.enemies) {
       if (e.dead) continue;
       if ((e.x - x) ** 2 + (e.y - y) ** 2 < (60 + e.r) ** 2) this.damageEnemy(e, dmg * 0.8, pid);
+    }
+    const owner = this.players.find((q) => q.id === pid);
+    if (owner && owner.syn.has('cluster')) {
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * TAU + this.rng.next();
+        (this.inProj ? this.newProjs : this.projs).push({ id: this.nextId++, team: 'p', pid, c: owner.charId, x, y, vx: Math.cos(a) * 280, vy: Math.sin(a) * 280, r: 4, dmg: dmg * 0.35, life: 0.35, fl: {}, hits: [], bounces: 0 });
+      }
     }
   }
 
@@ -1026,6 +1183,7 @@ export class Game {
   updateProjectiles(dt) {
     const keep = [];
     this.newProjs = [];
+    this.inProj = true;
     for (const pr of this.projs) {
       if (pr.team === 'e' && this.freezeT > 0) { keep.push(pr); continue; }
       // tête chercheuse
@@ -1059,9 +1217,9 @@ export class Game {
       if (alive) {
         const ptx = Math.floor(pr.x / TILE), pty = Math.floor(pr.y / TILE);
         const t = this.tile(ptx, pty);
-        let blocked = t === T_WALL || t === T_DOOR || (t === T_ROCK && !(pr.team === 'p' && pr.fl.spectral));
+        let blocked = t === T_WALL || t === T_DOOR || ((t === T_ROCK || t === T_TURRET) && !(pr.team === 'p' && pr.fl.spectral));
         if (isDestructible(t)) {
-          if (pr.team === 'p') { blocked = true; this.hitTile(ptx, pty, 1); }
+          if (pr.team === 'p') { blocked = true; this.hitTile(ptx, pty, 1, pr.pid); }
           else blocked = t !== T_FIRE;
         }
         if (blocked) {
@@ -1071,6 +1229,12 @@ export class Game {
             const blockX = tx === T_WALL || tx === T_DOOR || tx === T_ROCK || isDestructible(tx);
             if (blockX) pr.vx = -pr.vx; else pr.vy = -pr.vy;
             pr.x = px; pr.y = py;
+            const owner = this.players.find((q) => q.id === pr.pid);
+            if (owner && owner.syn.has('stormcaller')) {
+              let best = null, bd = 220 * 220;
+              for (const o of this.enemies) { if (o.dead || o.airborne || o.inv) continue; const dd = (o.x - pr.x) ** 2 + (o.y - pr.y) ** 2; if (dd < bd) { bd = dd; best = o; } }
+              if (best) { this.emit({ k: 'zap', x1: pr.x, y1: pr.y, x2: best.x, y2: best.y }); this.damageEnemy(best, pr.dmg * 0.6, pr.pid); }
+            }
           } else alive = false;
         }
       }
@@ -1094,7 +1258,7 @@ export class Game {
       } else {
         let consumed = false;
         for (const p of this.players) {
-          if (p.dead) continue;
+          if (p.dead || p.away) continue;
           if (p.stats.orbit > 0) {
             for (const o of this.orbPositions(p)) {
               if ((o.x - pr.x) ** 2 + (o.y - pr.y) ** 2 < (9 + pr.r) ** 2) { consumed = true; break; }
@@ -1112,6 +1276,7 @@ export class Game {
       }
     }
     // les nouveaux projectiles créés pendant la boucle (division, etc.)
+    this.inProj = false;
     this.projs = keep.concat(this.newProjs);
     this.newProjs = [];
   }
@@ -1138,6 +1303,13 @@ export class Game {
       if (best) {
         this.emit({ k: 'zap', x1: e.x, y1: e.y, x2: best.x, y2: best.y });
         this.damageEnemy(best, pr.dmg * 0.5, pr.pid);
+        const owner = this.players.find((q) => q.id === pr.pid);
+        if (owner && owner.syn.has('blizzard')) {
+          best.slowT = 3; e.slowT = 3;
+          let b2 = null, bd2 = 170 * 170;
+          for (const o of this.enemies) { if (o === e || o === best || o.dead || o.airborne || o.inv) continue; const dd = (o.x - best.x) ** 2 + (o.y - best.y) ** 2; if (dd < bd2) { bd2 = dd; b2 = o; } }
+          if (b2) { this.emit({ k: 'zap', x1: best.x, y1: best.y, x2: b2.x, y2: b2.y }); this.damageEnemy(b2, pr.dmg * 0.4, pr.pid); b2.slowT = 3; }
+        }
       }
     }
     if (f.split && !pr.isSplit) {
@@ -1156,37 +1328,79 @@ export class Game {
   // ---------------------------------------------------------- objets au sol
   updatePickups() {
     const room = this.room;
+    // aimant : attire les petits objets
+    const magnets = this.players.filter((p) => !p.dead && !p.away && p.flags.magnet);
+    if (magnets.length) {
+      for (const pk of room.pickups) {
+        if (!['coin', 'heart', 'bomb', 'key'].includes(pk.kind) || pk.price) continue;
+        let best = null, bd = 170 * 170;
+        for (const p of magnets) { const d = (p.x - pk.x) ** 2 + (p.y - pk.y) ** 2; if (d < bd) { bd = d; best = p; } }
+        if (best) { const d = Math.sqrt(bd) || 1; pk.x += ((best.x - pk.x) / d) * 3.2; pk.y += ((best.y - pk.y) / d) * 3.2; }
+      }
+    }
     for (const p of this.players) {
-      if (p.dead) continue;
+      if (p.dead || p.away) continue;
       for (const pk of room.pickups) {
         if (pk.taken) continue;
         if (pk.lock && pk.lock.pid === p.id && this.time < pk.lock.until) continue;
-        const rr = pk.kind === 'item' ? 26 : 18;
+        const rr = pk.kind === 'item' || pk.kind === 'altar' ? 26 : 18;
         if ((p.x - pk.x) ** 2 + (p.y - pk.y) ** 2 > (p.r + rr) ** 2) continue;
-        if (pk.price) {
-          if (p.coins < pk.price) continue;
-          if (pk.kind === 'heart' && p.hp >= p.maxHp) continue;
-        }
-        if (pk.kind === 'coin') { p.coins = Math.min(99, p.coins + 1); pk.taken = true; this.emit({ k: 'coin', pid: p.id, x: pk.x, y: pk.y }); }
-        else if (pk.kind === 'heart') {
-          if (p.hp >= p.maxHp) continue;
-          p.hp = Math.min(p.maxHp, p.hp + 2);
-          pk.taken = true;
-          if (pk.price) p.coins -= pk.price;
-          this.emit({ k: 'heal', pid: p.id, x: pk.x, y: pk.y });
-        } else if (pk.kind === 'item') {
-          const it = ITEMS[pk.item];
-          if (pk.price) p.coins -= pk.price;
-          if (it.active) {
-            const old = p.active;
-            p.active = { id: pk.item, charge: it.active.charge, max: it.active.charge };
-            this.runStats.items++;
-            this.emit({ k: 'item', pid: p.id, item: pk.item });
-            if (old) { pk.item = old.id; pk.price = 0; pk.lock = { pid: p.id, until: this.time + 1.5 }; }
-            else pk.taken = true;
-          } else {
-            pk.taken = true;
-            this.givePassive(p, pk.item);
+        const price = pk.price ? Math.max(1, pk.price - p.discount) : 0;
+        if (price && p.coins < price) continue;
+        if (pk.group && room.takenBy && room.takenBy.includes(p.id)) continue;
+        switch (pk.kind) {
+          case 'coin': {
+            const v = p.flags.greed ? 2 : 1;
+            p.coins = Math.min(99, p.coins + v); this.runStats.coins += v; pk.taken = true;
+            this.emit({ k: 'coin', pid: p.id, x: pk.x, y: pk.y });
+            break;
+          }
+          case 'heart':
+            if (p.hp >= p.maxHp) break;
+            p.hp = Math.min(p.maxHp, p.hp + (p.flags.greed ? 1 : 2));
+            pk.taken = true; p.coins -= price;
+            this.emit({ k: 'heal', pid: p.id, x: pk.x, y: pk.y });
+            break;
+          case 'bomb': p.bombs = Math.min(99, p.bombs + 1); pk.taken = true; p.coins -= price; this.emit({ k: 'gotbomb', pid: p.id, x: pk.x, y: pk.y }); break;
+          case 'key': p.keys = Math.min(99, p.keys + 1); pk.taken = true; p.coins -= price; this.emit({ k: 'gotkey', pid: p.id, x: pk.x, y: pk.y }); break;
+          case 'chest': pk.taken = true; this.openChest(pk, false); break;
+          case 'gchest':
+            if (p.keys <= 0) { if (!pk.warned || this.time - pk.warned > 2) { pk.warned = this.time; this.emit({ k: 'needkey', pid: p.id, x: pk.x, y: pk.y }); } break; }
+            p.keys--; pk.taken = true; this.openChest(pk, true);
+            break;
+          case 'altar': {
+            if (pk.cd && this.time < pk.cd) break;
+            pk.cd = this.time + 1.3;
+            p.hp -= 2;
+            p.iframes = 0.8;
+            room.sacCount = (room.sacCount || 0) + 1;
+            p.sacCount++;
+            this.emit({ k: 'sacrifice', pid: p.id, n: p.sacCount, x: pk.x, y: pk.y });
+            if (p.hp <= 0) { p.hp = 0; p.iframes = 0; p.hp = 1; this.hurtPlayer(p, 1); }
+            this.sacrificeReward(room.sacCount, pk);
+            break;
+          }
+          case 'item': {
+            const it = ITEMS[pk.item];
+            p.coins -= price;
+            if (it.active) {
+              const old = p.active;
+              p.active = { id: pk.item, charge: it.active.charge, max: it.active.charge };
+              this.runStats.items++;
+              this.emit({ k: 'item', pid: p.id, item: pk.item });
+              if (old) { pk.item = old.id; pk.price = 0; pk.group = null; pk.lock = { pid: p.id, until: this.time + 1.5 }; }
+              else pk.taken = true;
+            } else {
+              pk.taken = true;
+              this.givePassive(p, pk.item);
+            }
+            if (pk.group && room.takenBy) {
+              room.takenBy.push(p.id);
+              // chacun son objet : quand tout le monde s'est servi, les autres disparaissent
+              const need = this.alive().length;
+              if (room.takenBy.length >= need) for (const o of room.pickups) if (o.group === pk.group && !o.taken) { o.taken = true; this.emit({ k: 'poof', x: o.x, y: o.y - 20, c: 'pixie' }); }
+            }
+            break;
           }
         }
       }
@@ -1194,10 +1408,41 @@ export class Game {
     if (room.pickups.some((pk) => pk.taken)) room.pickups = room.pickups.filter((pk) => !pk.taken);
   }
 
+  openChest(pk, golden) {
+    this.emit({ k: 'chest', x: pk.x, y: pk.y, gold: golden });
+    const drop = (kind, extra) => this.room.pickups.push(this.makePickup(kind, pk.x + this.rng.range(-22, 22), pk.y + this.rng.range(-16, 16), extra));
+    if (golden && this.rng.chance(0.4)) { drop('item', { item: this.rollItem('treasure') }); return; }
+    if (!golden && this.rng.chance(0.06)) { drop('item', { item: this.rollItem('treasure') }); return; }
+    const n = golden ? this.rng.int(3, 5) : this.rng.int(2, 3);
+    for (let i = 0; i < n; i++) drop(this.rng.pick(['coin', 'coin', 'coin', 'heart', 'bomb', 'key']));
+  }
+
+  sacrificeReward(n, pk) {
+    const drop = (kind, extra) => this.room.pickups.push(this.makePickup(kind, pk.x + this.rng.range(-40, 40), pk.y + this.rng.range(20, 40), extra));
+    if (n === 1) { drop('coin'); drop('coin'); }
+    else if (n === 2) { drop('bomb'); drop('key'); }
+    else if (n === 3) { if (this.rng.chance(0.5)) drop('item', { item: this.rollItem('treasure') }); else drop('chest'); }
+    else if (n === 4) drop('item', { item: this.rollItem(this.rng.chance(0.5) ? 'curse' : 'boss') });
+    else if (n === 5) drop('gchest');
+    else if (this.rng.chance(0.33)) drop('item', { item: this.rollItem('treasure') });
+  }
+
   checkRoomClear() {
     const room = this.room;
     if (room.cleared || this.enemies.some((e) => !e.dead)) return;
+    if (room.type === 'challenge' && room.wavesLeft > 1) {
+      room.wavesLeft--;
+      room.waveN = (room.waveN || 1) + 1;
+      this.spawnRoomEnemies(room, 2 + room.waveN);
+      this.emit({ k: 'wave', n: room.waveN, total: room.waveN + room.wavesLeft - 1 });
+      return;
+    }
     room.cleared = true;
+    if (room.type === 'challenge') {
+      room.pickups.push(this.makePickup('item', VIEW_W / 2, VIEW_H / 2, { item: this.rollItem(this.rng.chance(0.5) ? 'boss' : 'treasure') }));
+      this.emit({ k: 'challengeDone' });
+    }
+    for (const p of this.players) if (p.flags.piggy && !p.dead) { p.coins = Math.min(99, p.coins + 1); this.emit({ k: 'coin', pid: p.id, x: p.x, y: p.y }); }
     this.roomVer++;
     this.emit({ k: 'clear' });
     for (const p of this.players) if (p.active && !p.dead) p.active.charge = Math.min(p.active.max, p.active.charge + 1);
@@ -1206,10 +1451,14 @@ export class Game {
       const r = this.rng.next();
       const cx = VIEW_W / 2, cy = VIEW_H / 2;
       const spot = this.freeTiles().sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))[0] || { x: cx, y: cy };
-      if (r < 0.35 + luck * 0.04) {
+      const hard = this.difficulty === 'hard' ? 0.75 : 1;
+      if (r < 0.3 + luck * 0.03) {
         const n = this.rng.chance(0.25) ? 3 : 1;
         for (let i = 0; i < n; i++) room.pickups.push(this.makePickup('coin', spot.x + (i - (n - 1) / 2) * 16, spot.y));
-      } else if (r < 0.52 + luck * 0.06) room.pickups.push(this.makePickup('heart', spot.x, spot.y));
+      } else if (r < 0.3 + 0.14 * hard + luck * 0.05) room.pickups.push(this.makePickup('heart', spot.x, spot.y));
+      else if (r < 0.54 + luck * 0.05) room.pickups.push(this.makePickup('bomb', spot.x, spot.y));
+      else if (r < 0.62 + luck * 0.05) room.pickups.push(this.makePickup('key', spot.x, spot.y));
+      else if (r < 0.68 + luck * 0.05) room.pickups.push(this.makePickup(this.rng.chance(0.75) ? 'chest' : 'gchest', spot.x, spot.y));
     }
   }
 
@@ -1221,7 +1470,18 @@ export class Game {
     const d = alive[0].atDoor;
     if (!d || !alive.every((p) => p.atDoor === d)) return;
     const next = this.fl.get(this.room.gx + DIRS[d].dx, this.room.gy + DIRS[d].dy);
-    if (next) this.enterRoom(next, d);
+    if (!next) return;
+    if (next.locked) {
+      const payer = alive.find((p) => p.keys > 0);
+      if (!payer) {
+        if (!this.lockWarn || this.time - this.lockWarn > 2) { this.lockWarn = this.time; this.emit({ k: 'needkey', pid: alive[0].id, x: alive[0].x, y: alive[0].y }); }
+        return;
+      }
+      payer.keys--;
+      next.locked = false;
+      this.emit({ k: 'doorunlock', pid: payer.id });
+    }
+    this.enterRoom(next, d);
   }
 
   checkTrapdoor() {
@@ -1235,7 +1495,7 @@ export class Game {
   }
 
   // ---------------------------------------------------------- obstacles destructibles
-  hitTile(tx, ty, n) {
+  hitTile(tx, ty, n, pid) {
     const idx = ty * ROOM_W + tx;
     const t = this.room.tiles[idx];
     if (!isDestructible(t)) return;
@@ -1249,7 +1509,7 @@ export class Game {
     delete this.room.thp[idx];
     this.room.tiles[idx] = T_FLOOR;
     this.flowT = 0;
-    this.emit({ k: 'tbreak', x, y, t });
+    this.emit({ k: 'tbreak', x, y, t, pid });
     // butin
     const luck = Math.max(0, ...this.players.map((p) => p.stats.luck));
     const r = this.rng.next();
@@ -1267,6 +1527,128 @@ export class Game {
     }
   }
 
+  // ---------------------------------------------------------- bombes
+  updateBombs(dt) {
+    for (const b of this.bombs) {
+      b.t -= dt;
+      if (b.t <= 0) this.bombExplode(b);
+    }
+    this.bombs = this.bombs.filter((b) => b.t > 0);
+  }
+
+  bombExplode(b) {
+    const R = b.big ? 100 : 74;
+    this.emit({ k: 'boom', x: b.x, y: b.y, big: true, r: R });
+    const dmg = 26 + this.floor * 5;
+    for (const e of this.enemies) if (!e.dead && (e.x - b.x) ** 2 + (e.y - b.y) ** 2 < (R + e.r) ** 2) {
+      this.damageEnemy(e, dmg, b.pid);
+      if (!e.boss) { const d = Math.hypot(e.x - b.x, e.y - b.y) || 1; e.kx += ((e.x - b.x) / d) * 400; e.ky += ((e.y - b.y) / d) * 400; }
+    }
+    for (const p of this.players) {
+      if (p.dead || p.away) continue;
+      if (b.big && p.id === b.pid) continue;
+      if ((p.x - b.x) ** 2 + (p.y - b.y) ** 2 < (R * 0.85) ** 2) this.hurtPlayer(p, 2);
+    }
+    const tx0 = Math.floor(b.x / TILE), ty0 = Math.floor(b.y / TILE);
+    for (let ty = ty0 - 2; ty <= ty0 + 2; ty++) for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
+      if (tx <= 0 || ty <= 0 || tx >= ROOM_W - 1 || ty >= ROOM_H - 1) continue;
+      if (Math.hypot((tx + 0.5) * TILE - b.x, (ty + 0.5) * TILE - b.y) > R + 12) continue;
+      const i = ty * ROOM_W + tx, t = this.room.tiles[i];
+      if (t === T_ROCK || t === T_TURRET) {
+        this.room.tiles[i] = T_FLOOR; this.flowT = 0;
+        this.emit({ k: 'rockbreak', x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE });
+        if (t === T_ROCK && this.rng.chance(0.08)) this.room.pickups.push(this.makePickup(this.rng.pick(['coin', 'bomb', 'key']), (tx + 0.5) * TILE, (ty + 0.5) * TILE));
+      } else if (isDestructible(t)) this.hitTile(tx, ty, 99, b.pid);
+    }
+    this.roomVer++;
+    // passages secrets dans les murs
+    for (const d of DIR_NAMES) {
+      if (!this.room.hidden || !this.room.hidden[d]) continue;
+      const dx = (DIRS[d].tx + 0.5) * TILE, dy = (DIRS[d].ty + 0.5) * TILE;
+      if (Math.hypot(dx - b.x, dy - b.y) < R + 36) this.revealSecret(this.room, d);
+    }
+    // une bombe en déclenche une autre
+    for (const o of this.bombs) if (o !== b && o.t > 0.1 && (o.x - b.x) ** 2 + (o.y - b.y) ** 2 < R * R) o.t = 0.1;
+  }
+
+  revealSecret(room, d, silent = false) {
+    room.hidden[d] = false;
+    room.doors[d] = true;
+    room.tiles[DIRS[d].ty * ROOM_W + DIRS[d].tx] = T_DOOR;
+    const sr = this.fl.get(room.gx + DIRS[d].dx, room.gy + DIRS[d].dy);
+    if (sr && !sr.revealed) { sr.revealed = true; this.runStats.secrets++; }
+    this.roomVer++;
+    this.emit({ k: 'secret', x: (DIRS[d].tx + 0.5) * TILE, y: (DIRS[d].ty + 0.5) * TILE, silent });
+  }
+
+  // ---------------------------------------------------------- pièges
+  spikesUp() { return !this.room.cleared && (this.time % 2.4) < 1.0; }
+
+  updateTraps(dt) {
+    const room = this.room;
+    if (room.trap && !room.cleared) {
+      for (const k in room.trap) {
+        const i = +k;
+        if (room.tiles[i] !== T_TURRET) continue;
+        room.trap[k] -= dt;
+        if (room.trap[k] <= 0) {
+          room.trap[k] = 2.4;
+          const x = (i % ROOM_W + 0.5) * TILE, y = ((i / ROOM_W | 0) + 0.5) * TILE;
+          const off = (this.time | 0) % 2 ? Math.PI / 4 : 0;
+          for (let j = 0; j < 4; j++) this.shootE(x, y, off + (j * TAU) / 4, 170, { c: 'e' });
+          this.emit({ k: 'eshoot', x, y });
+        }
+      }
+    }
+    if (room.crumble) {
+      for (const k in room.crumble) {
+        if (room.crumble[k] <= 0) continue;
+        room.crumble[k] -= dt;
+        if (room.crumble[k] <= 0) {
+          const i = +k;
+          room.tiles[i] = T_PIT; this.flowT = 0; this.roomVer++;
+          const x = (i % ROOM_W + 0.5) * TILE, y = ((i / ROOM_W | 0) + 0.5) * TILE;
+          this.emit({ k: 'collapse', x, y });
+          for (const p of this.players) if (!p.dead && Math.abs(p.x - x) < TILE / 2 + 4 && Math.abs(p.y - y) < TILE / 2 + 4) { this.hurtPlayer(p, 1); this.collide(p, 'player'); }
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------- réanimer un allié (multi)
+  updateRevive(dt) {
+    for (const g of this.players) {
+      if (!g.dead || g.away) continue;
+      const helper = this.alive().find((p) => Math.hypot(p.x - g.x, p.y - g.y) < 40);
+      if (helper) {
+        g.revProg += dt / 2.5;
+        if (g.revProg >= 1) {
+          g.dead = false; g.hp = 2; g.iframes = 2; g.revProg = 0;
+          this.emit({ k: 'allyrevive', pid: g.id, by: helper.id, x: g.x, y: g.y });
+        }
+      } else g.revProg = Math.max(0, g.revProg - dt);
+    }
+  }
+
+  // ---------------------------------------------------------- ping : « par ici ! »
+  doPing(p) {
+    const cands = [];
+    for (const pk of this.room.pickups) cands.push({ x: pk.x, y: pk.y, label: pk.kind === 'item' ? ITEMS[pk.item].name : { coin: 'Pièce', heart: 'Cœur', bomb: 'Bombe', key: 'Clé', chest: 'Coffre', gchest: 'Coffre doré', altar: 'Autel' }[pk.kind] || 'Ici' });
+    for (const e of this.enemies) if (!e.dead) cands.push({ x: e.x, y: e.y, label: e.boss ? e.name : 'Ennemi !' });
+    if (this.trapdoor) cands.push({ x: this.trapdoor.x, y: this.trapdoor.y, label: 'Trappe' });
+    if (this.room.cleared) for (const d of DIR_NAMES) if (this.room.doors[d]) cands.push({ x: (DIRS[d].tx + 0.5) * TILE, y: (DIRS[d].ty + 0.5) * TILE, label: 'Cette porte' });
+    let best = null, bs = -Infinity;
+    for (const c of cands) {
+      const dx = c.x - p.x, dy = c.y - p.y, d = Math.hypot(dx, dy) || 1;
+      const dot = (dx * p.fx + dy * p.fy) / d;
+      if (dot < 0.6 || d > 380) continue;
+      const sc = dot * 2 - d / 300;
+      if (sc > bs) { bs = sc; best = c; }
+    }
+    const t = best || { x: p.x + p.fx * 60, y: p.y + p.fy * 60, label: 'Par ici !' };
+    this.emit({ k: 'ping', pid: p.id, x: t.x, y: t.y, label: t.label });
+  }
+
   // ---------------------------------------------------------- état envoyé au rendu
   snapshot() {
     const ev = this.events;
@@ -1279,7 +1661,7 @@ export class Game {
       t: this.time, seed: this.seed, floor: this.floor, state: this.state, freeze: this.freezeT > 0,
       roomVer: this.roomVer,
       room: { gx: room.gx, gy: room.gy, type: room.type, cleared: room.cleared, tiles: room.tiles, doors: room.doors },
-      map: this.fl.rooms.map((r) => [r.gx, r.gy, r.type, r.visited ? 1 : 0, r.cleared ? 1 : 0]),
+      map: this.mapView(),
       players: this.players.map((p) => ({
         id: p.id, name: p.name, c: p.charId, x: r1(p.x), y: r1(p.y), fx: r1(p.fx), fy: r1(p.fy),
         vx: r1(p.vx), vy: r1(p.vy), hp: p.hp, mhp: p.maxHp, coins: p.coins, items: p.items,
@@ -1287,23 +1669,52 @@ export class Game {
         dead: p.dead, inv: p.iframes > 0, sh: p.buffs.shield > 0, hs: p.buffs.haste > 0, door: p.atDoor, trap: p.onTrap,
         st: { dmg: r1(p.stats.dmg), tears: r1(1 / p.stats.fireDelay), spd: r1(p.stats.speed / 100), rng: r1(p.stats.range / 100), ss: r1(p.stats.shotSpeed / 100), luck: p.stats.luck },
         orb: p.stats.orbit, oa: r1(p.orbA), rev: p.revive, aegis: p.aegis, kills: p.kills,
+        bombs: p.bombs, keys: p.keys, rp: r1(p.revProg), away: p.away, syn: [...p.syn], sr: Math.round(p.stats.speed * (p.buffs.haste > 0 ? 1.3 : 1) * (p.dead ? 1.1 : 1)), disc: p.discount,
       })),
       enemies: this.enemies.filter((e) => !e.dead).map((e) => ({
         id: e.id, t: e.type, x: r1(e.x), y: r1(e.y), r: e.r, hp: Math.ceil(e.hp), mhp: Math.ceil(e.maxHp),
         b: e.boss ? 1 : 0, el: e.elite ? 1 : 0, vx: r1(e.vx), hit: e.hitT > 0 ? 1 : 0, sl: e.slowT > 0 ? 1 : 0,
         bu: e.burnT > 0 ? 1 : 0, po: e.poisonT > 0 ? 1 : 0, w: e.windup ? 1 : 0, air: e.airborne ? 1 : 0,
-        z: r1(e.z || 0), fd: r1(e.fade || 0), rg: e.rage ? 1 : 0, bt: e.biting > 0 ? 1 : 0, vy: r1(e.vy), sp: e.spawnT > 0 ? r1(e.spawnT) : 0, ph: e.phase || 0,
+        z: r1(e.z || 0), fd: r1(e.fade || 0), ch: e.champ || 0, rg: e.rage ? 1 : 0, bt: e.biting > 0 ? 1 : 0, vy: r1(e.vy), sp: e.spawnT > 0 ? r1(e.spawnT) : 0, ph: e.phase || 0,
       })),
       proj: this.projs.map((p) => [p.id, r1(p.x), r1(p.y), r1(p.r), p.c, p.team === 'p' ? 1 : 0]),
-      pickups: room.pickups.map((pk) => ({ id: pk.id, k: pk.kind, x: pk.x, y: pk.y, item: pk.item, price: pk.price })),
+      pickups: room.pickups.map((pk) => ({ id: pk.id, k: pk.kind, x: Math.round(pk.x), y: Math.round(pk.y), item: pk.item, price: pk.price, g: pk.group ? 1 : 0 })),
+      bombs: this.bombs.map((b) => [b.id, Math.round(b.x), Math.round(b.y), Math.round(b.t * 10) / 10, b.big ? 1 : 0]),
+      spikes: this.spikesUp(),
+      diff: this.difficulty, daily: this.daily,
       trap: this.trapdoor,
       biome: this.biomeId,
-      dyn: Object.entries(room.thp).map(([i, hp]) => [+i, room.tiles[+i], hp]),
+      dyn: this.dynTiles(),
       desc: this.descendT > 0 ? Math.round((1 - this.descendT / 1.1) * 100) / 100 : 0,
       boss: boss ? { name: boss.name, hp: Math.max(0, boss.hp), mhp: boss.maxHp } : null,
       doorWait: atDoor, aliveCount: this.alive().length,
       run: this.runStats,
       ev,
     };
+  }
+
+  dynTiles() {
+    const room = this.room, out = [];
+    for (const [i, hp] of Object.entries(room.thp)) out.push([+i, room.tiles[+i], hp]);
+    for (let i = 0; i < room.tiles.length; i++) {
+      const t = room.tiles[i];
+      if (t === T_SPIKES) out.push([i, t, this.spikesUp() ? 1 : 0]);
+      else if (t === T_TURRET) out.push([i, t, room.trap && room.trap[i] < 0.5 && !room.cleared ? 1 : 0]);
+      else if (t === T_CRUMBLE) out.push([i, t, room.crumble && room.crumble[i] != null ? Math.round(room.crumble[i] * 10) : -1]);
+    }
+    return out;
+  }
+
+  // ce que les joueurs connaissent de la carte (carte, boussole...)
+  mapView() {
+    const all = this.players.some((p) => p.flags.map);
+    const special = all || this.players.some((p) => p.flags.compass);
+    const out = [];
+    for (const r of this.fl.rooms) {
+      if (r.type === 'secret' && !r.visited && !r.revealed) continue;
+      const known = r.visited ? 2 : all || (special && r.type !== 'normal') ? 1 : 0;
+      out.push([r.gx, r.gy, r.type, r.visited ? 1 : 0, r.cleared ? 1 : 0, r.locked ? 1 : 0, known]);
+    }
+    return out;
   }
 }

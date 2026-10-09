@@ -12,6 +12,12 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <button id="btn-settings" class="gear" title="Paramètres (Échap)">⚙</button>
+  <div id="loading" class="loading">
+    <div class="logo">HEX<span>LINGS</span></div>
+    <div class="bar"><div id="load-bar"></div></div>
+    <div id="load-text" class="hint">Ouverture des grimoires...</div>
+  </div>
   <div id="stage">
     <canvas id="game"></canvas>
 
@@ -22,6 +28,12 @@
           <div class="logo">HEX<span>LINGS</span></div>
           <div class="tag">Les petits sorciers du donjon · solo ou jusqu'à 4 en ligne</div>
         </header>
+        <nav class="topnav">
+          <button class="btn small" data-open="#screen-talents">🌳 Talents <span id="nav-shards" class="pill"></span></button>
+          <button class="btn small" data-open="#screen-codex">📖 Encyclopédie</button>
+          <button class="btn small" data-open="#screen-leaderboard">🏆 Classement</button>
+          <button class="btn small" id="btn-account">👤 <span id="nav-account">Compte</span></button>
+        </nav>
 
         <div class="cols">
           <section class="panel">
@@ -34,7 +46,12 @@
             <label class="field">Pseudo
               <input id="name" maxlength="16" placeholder="Merlinou" autocomplete="off" />
             </label>
+            <div class="diff" id="diff">
+              <button data-diff="normal" class="seg on">Normal</button>
+              <button data-diff="hard" class="seg">Difficile</button>
+            </div>
             <button id="btn-solo" class="btn primary">▶ Jouer en solo</button>
+            <button id="btn-daily" class="btn">📅 Défi du jour</button>
             <div class="sep"><span>multijoueur</span></div>
             <button id="btn-create" class="btn">✦ Créer une partie</button>
             <div class="join">
@@ -53,10 +70,8 @@
         <footer class="foot">
           <span id="profile-stats"></span>
           <span class="foot-btns">
-            <button id="btn-help" class="link">Commandes</button>
+            <button id="btn-help" class="link">Paramètres &amp; commandes</button>
             <button id="btn-save" class="link">Sauvegarde</button>
-            <button id="btn-mute" class="link">Son : oui</button>
-            <button id="btn-music" class="link">Musique : oui</button>
           </span>
         </footer>
       </div>
@@ -70,6 +85,14 @@
           <p class="hint">Donne ce code à tes amis (4 sorciers maximum) :</p>
           <div class="code-row"><div id="lobby-code" class="code">----</div><button id="btn-copy" class="btn small">Copier le lien</button></div>
           <ul id="lobby-players" class="lobby-players"></ul>
+          <div class="lobby-opts">
+            <div class="diff" id="lobby-diff">
+              <button data-diff="normal" class="seg on">Normal</button>
+              <button data-diff="hard" class="seg">Difficile</button>
+              <button data-diff="daily" class="seg">Défi du jour</button>
+            </div>
+            <span class="hint small">On peut aussi rejoindre une partie déjà lancée.</span>
+          </div>
           <h3>Ton sorcier</h3>
           <div id="lobby-chars" class="chars small"></div>
           <div class="row">
@@ -81,14 +104,35 @@
       </div>
     </div>
 
-    <!-- PAUSE -->
-    <div id="screen-pause" class="screen hidden dim">
-      <div class="panel center">
-        <h2 id="pause-title">Pause</h2>
-        <div id="pause-items" class="inv"></div>
+    <!-- PARAMÈTRES -->
+    <div id="modal-settings" class="screen hidden dim">
+      <div class="panel center settings">
+        <h2>⚙ Paramètres</h2>
+        <p id="settings-note" class="msg"></p>
+        <section>
+          <h3>Son</h3>
+          <label class="slider">Effets sonores <input id="vol-sfx" type="range" min="0" max="100" /></label>
+          <label class="slider">Musique <input id="vol-music" type="range" min="0" max="100" /></label>
+        </section>
+        <section>
+          <h3>Commandes <small class="hint">— clique sur une touche pour la changer</small></h3>
+          <table id="keys-table" class="keys"></table>
+          <p class="hint small">Manette : stick gauche pour bouger, stick droit ou boutons A/B/X/Y pour tirer, gâchettes pour le sort.</p>
+          <button id="btn-keys-reset" class="btn small">Touches par défaut</button>
+        </section>
+        <section>
+          <h3>Affichage</h3>
+          <label class="check"><input id="opt-shake" type="checkbox" /> Tremblements de l'écran</label>
+          <button id="btn-fullscreen" class="btn small">Plein écran</button>
+          <button id="btn-intro" class="btn small">Revoir l'introduction</button>
+        </section>
+        <section id="set-run">
+          <h3>Objets de la run</h3>
+          <div id="pause-items" class="inv"></div>
+        </section>
         <div class="row">
           <button id="btn-resume" class="btn primary">Reprendre</button>
-          <button id="btn-quit" class="btn ghost">Abandonner la run</button>
+          <button id="btn-quit" class="btn ghost danger">Abandonner la run</button>
         </div>
       </div>
     </div>
@@ -99,6 +143,7 @@
         <h2 id="end-title">Fin</h2>
         <p id="end-sub" class="hint"></p>
         <div id="end-reward" class="reward hidden"></div>
+        <div id="end-gains" class="gains"></div>
         <div id="end-stats" class="end-stats"></div>
         <div class="row">
           <button id="btn-again" class="btn primary">Rejouer</button>
@@ -107,25 +152,82 @@
       </div>
     </div>
 
-    <!-- MODALES -->
-    <div id="modal-help" class="screen hidden dim">
-      <div class="panel center">
-        <h2>Commandes</h2>
-        <table class="keys">
-          <tr><td><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Se déplacer</td></tr>
-          <tr><td><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> ou clic gauche</td><td>Lancer des sorts</td></tr>
-          <tr><td><kbd>Espace</kbd> ou clic droit</td><td>Sort spécial (se recharge en nettoyant des salles)</td></tr>
-          <tr><td><kbd>Échap</kbd></td><td>Pause / menu</td></tr>
-          <tr><td><kbd>M</kbd> / <kbd>N</kbd></td><td>Couper le son / la musique</td></tr>
-          <tr><td>Manette</td><td>Stick gauche / stick droit / A</td></tr>
-        </table>
-        <p class="hint">Nettoie chaque salle pour ouvrir les portes. Trouve la salle au trésor ★, la boutique $ et le boss ☠. Casse les crottes, vases et feux pour trouver des pièces (attention, le feu brûle !).
-          En multi, <b>tout le monde doit se placer sur la même porte</b> pour changer de salle.
-          10 étages, un boss à chaque fin d'étage, un gros boss au 5 et au 10.</p>
-        <button class="btn primary close">OK</button>
+    <!-- TALENTS -->
+    <div id="screen-talents" class="screen hidden dim">
+      <div class="panel center wide">
+        <h2>🌳 Arbre de talents</h2>
+        <p class="hint">Chaque run te rapporte des <b class="gold">éclats d'âme ◆</b> (même si tu perds). Dépense-les pour devenir plus fort à chaque nouvelle run.</p>
+        <div class="shards-big">◆ <span id="talent-shards">0</span></div>
+        <div id="talents" class="talents"></div>
+        <div class="row">
+          <button id="btn-talent-reset" class="btn small ghost">Rembourser tous les talents</button>
+          <button class="btn primary close">Fermer</button>
+        </div>
       </div>
     </div>
 
+    <!-- ENCYCLOPÉDIE -->
+    <div id="screen-codex" class="screen hidden dim">
+      <div class="panel center wide">
+        <h2>📖 Encyclopédie</h2>
+        <div class="tabs" id="codex-tabs">
+          <button data-tab="items" class="seg on">Objets</button>
+          <button data-tab="enemies" class="seg">Monstres</button>
+          <button data-tab="bosses" class="seg">Boss</button>
+          <button data-tab="ach" class="seg">Succès</button>
+          <button data-tab="syn" class="seg">Synergies</button>
+        </div>
+        <p id="codex-count" class="hint"></p>
+        <div id="codex" class="codex"></div>
+        <div class="row"><button class="btn primary close">Fermer</button></div>
+      </div>
+    </div>
+
+    <!-- CLASSEMENT -->
+    <div id="screen-leaderboard" class="screen hidden dim">
+      <div class="panel center wide">
+        <h2>🏆 Classement</h2>
+        <div class="tabs" id="lb-tabs">
+          <button data-mode="normal" class="seg on">Normal</button>
+          <button data-mode="hard" class="seg">Difficile</button>
+          <button data-mode="daily" class="seg">Défi du jour</button>
+        </div>
+        <table class="lb"><thead><tr><th>#</th><th>Sorcier</th><th>Score</th><th>Étage</th><th>Temps</th></tr></thead><tbody id="lb-body"></tbody></table>
+        <p id="lb-msg" class="hint"></p>
+        <div class="row"><button class="btn primary close">Fermer</button></div>
+      </div>
+    </div>
+
+    <!-- COMPTE -->
+    <div id="modal-account" class="screen hidden dim">
+      <div class="panel center">
+        <h2>👤 Compte en ligne</h2>
+        <div id="acc-out">
+          <p class="hint">Un compte garde ta progression (reliques, talents, succès...) sur tous tes appareils, et ton pseudo dans le classement.</p>
+          <label class="field">Pseudo <input id="acc-name" maxlength="16" autocomplete="username" /></label>
+          <label class="field">Mot de passe <input id="acc-pw" type="password" autocomplete="current-password" /></label>
+          <div class="row">
+            <button id="btn-login" class="btn primary">Se connecter</button>
+            <button id="btn-register" class="btn">Créer un compte</button>
+          </div>
+        </div>
+        <div id="acc-in" class="hidden">
+          <p class="hint">Connecté en tant que <b id="acc-who" class="gold"></b>. Ta progression est sauvegardée en ligne automatiquement.</p>
+          <div class="row"><button id="btn-logout" class="btn ghost">Se déconnecter</button></div>
+        </div>
+        <p id="acc-msg" class="msg"></p>
+        <div class="row"><button class="btn ghost close">Fermer</button></div>
+      </div>
+    </div>
+
+    <!-- INTRODUCTION -->
+    <div id="screen-intro" class="screen hidden intro">
+      <canvas id="intro-canvas" width="360" height="216"></canvas>
+      <div id="intro-text" class="intro-text"></div>
+      <button id="btn-skip" class="btn small skip">Passer ▶▶</button>
+    </div>
+
+    <!-- MODALES -->
     <div id="modal-save" class="screen hidden dim">
       <div class="panel center">
         <h2>Sauvegarde</h2>

@@ -7,3 +7,8 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
+    envVars:
+      # Adresse d'une base Postgres gratuite (Supabase ou Neon) pour garder
+      # les comptes et le classement. Sans elle, ils sont perdus à chaque redémarrage.
+      - key: DATABASE_URL
+        sync: false

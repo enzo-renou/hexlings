@@ -96,6 +96,25 @@ export const ITEMS = {
   goldcauldron:{ name: 'Chaudron Doré', desc: '+15 pièces, chance +1', glyph: '💰', coins: 15, add: { luck: 1 }, pools: ['treasure', 'boss'] },
   shootingstar:{ name: 'Étoile Filante', desc: 'Vitesse des tirs +30%, dégâts +0.4', glyph: '🌠', mult: { shotSpeed: 1.3 }, add: { dmg: 0.4 }, pools: P_ALL },
   heartcrystal:{ name: 'Cristal de Vie', desc: '+1 cœur et soin complet', glyph: '💗', hp: 2, heal: 99, pools: P_ALL },
+  // --- objets débloqués par les succès
+  sackbombs:  { name: 'Sac de Poudre', desc: '+5 bombes', glyph: '🧨', bombs: 5, pools: P_ALL, unlock: 'poop50' },
+  arcanebomb: { name: 'Bombes Arcaniques', desc: 'Explosions plus grandes et sans danger pour toi, +3 bombes', glyph: '💣', bombs: 3, flags: { arcaneBombs: true }, pools: ['treasure', 'boss'], unlock: 'challenge' },
+  keyring:    { name: 'Trousseau Ancien', desc: '+4 clés', glyph: '🗝️', keys: 4, pools: P_ALL, unlock: 'synergy' },
+  skeletonkey:{ name: 'Clé Squelette', desc: '+15 clés', glyph: '🔑', keys: 15, pools: ['treasure', 'boss'], unlock: 'daily' },
+  treasuremap:{ name: 'Carte au Trésor', desc: 'Révèle toute la carte de l\u2019étage', glyph: '🗺️', flags: { map: true }, pools: P_ALL, unlock: 'win' },
+  compass:    { name: 'Boussole Astrale', desc: 'Révèle les salles spéciales sur la carte', glyph: '🧭', flags: { compass: true }, pools: P_ALL, unlock: 'floor5' },
+  xray:       { name: 'Lunettes de Vérité', desc: 'Les passages secrets s\u2019ouvrent tout seuls', glyph: '🥽', flags: { xray: true }, pools: ['treasure', 'shop'], unlock: 'secret5' },
+  magnet:     { name: 'Aimant Runique', desc: 'Attire les pièces, cœurs, bombes et clés', glyph: '🧲', flags: { magnet: true }, pools: P_ALL, unlock: 'nohit' },
+  piggy:      { name: 'Tirelire Enchantée', desc: '+1 pièce à chaque salle nettoyée', glyph: '🐷', flags: { piggy: true }, pools: P_ALL, unlock: 'first_boss' },
+  thornarmor: { name: 'Armure de Ronces', desc: '+1 cœur. Quand tu es touché, des épines jaillissent', glyph: '🌵', hp: 2, flags: { thorns: true }, pools: P_ALL, unlock: 'kills500' },
+  // --- objets maudits (salle maudite) : gros bonus, gros malus
+  cursedcrown:{ name: 'Couronne Maudite', desc: 'Dégâts x1.8... mais -2 cœurs max', glyph: '💀', mult: { dmg: 1.8 }, hp: -4, pools: ['curse'], cursed: true },
+  demonpact:  { name: 'Pacte Démoniaque', desc: 'Triple tir et cadence +30%... mais vitesse -25%', glyph: '😈', flags: { triple: true }, mult: { fireDelay: 0.7, speed: 0.75 }, pools: ['curse'], cursed: true },
+  bloodmoon:  { name: 'Lune de Sang', desc: 'Dégâts +2... mais tu perds ½ cœur à chaque étage', glyph: '🌑', add: { dmg: 2 }, flags: { bloodmoon: true }, pools: ['curse'], cursed: true, unlock: 'sacrifice' },
+  voidheart:  { name: 'Cœur du Néant', desc: 'Tirs perçants, spectraux et chercheurs... mais portée -40% et chance -3', glyph: '🖤', flags: { pierce: true, spectral: true, homing: true }, mult: { range: 0.6 }, add: { luck: -3 }, pools: ['curse'], cursed: true },
+  greedring:  { name: 'Anneau d\u2019Avarice', desc: 'Les pièces valent double... mais les cœurs ne soignent que ½', glyph: '💸', flags: { greed: true }, pools: ['curse'], cursed: true, unlock: 'coins99' },
+  glasscannon:{ name: 'Canon de Verre', desc: 'Dégâts x2.5 et cadence +20%... mais tu prends double dégâts', glyph: '🏺', mult: { dmg: 2.5, fireDelay: 0.83 }, flags: { glass: true }, pools: ['curse'], cursed: true, unlock: 'win_hard' },
+  hexedeye:   { name: 'Œil Ensorcelé', desc: 'Tirs explosifs à tête chercheuse... mais -1 cœur max', glyph: '🧿', flags: { explode: true, homing: true }, hp: -2, pools: ['curse'], cursed: true },
   // --- Sorts (objets actifs, touche ESPACE, se rechargent en nettoyant des salles)
   s_nova:   { name: 'Sort : Nova Arcanique', desc: 'ESPACE : 16 projectiles tout autour de toi', glyph: '🌟', active: { charge: 2, effect: 'nova' }, pools: P_ALL },
   s_heal:   { name: 'Sort : Soin', desc: 'ESPACE : rend 2 cœurs', glyph: '💚', active: { charge: 3, effect: 'heal' }, pools: ['treasure', 'shop'] },
@@ -282,3 +301,61 @@ export const BOSSES = {
 };
 
 
+
+
+// ---------- Synergies : deux pouvoirs qui se combinent
+export const SYNERGIES = [
+  { id: 'toxicfire', name: 'Feu Toxique', desc: 'Brûlure + poison : les ennemis relâchent un nuage toxique', need: (f) => f.burn && f.poison },
+  { id: 'swarm', name: 'Essaim', desc: 'Triple tir + tête chercheuse : 5 projectiles', need: (f) => f.triple && f.homing },
+  { id: 'blizzard', name: 'Blizzard', desc: 'Glace + foudre : la foudre gèle et rebondit deux fois', need: (f) => f.frost && f.chain },
+  { id: 'cluster', name: 'Fragmentation', desc: 'Les explosions projettent des éclats', need: (f) => f.explode && (f.bounce || f.split) },
+  { id: 'lance', name: 'Lance Céleste', desc: 'Tirs géants perçants : +30% dégâts', need: (f) => f.pierce && f.big },
+  { id: 'bloodorbs', name: 'Orbes Sanglantes', desc: 'Tes orbes font double dégâts', need: (f, s) => s.orbit >= 2 && f.lifesteal },
+  { id: 'stormcaller', name: 'Tempétueux', desc: 'Chaque rebond déclenche un éclair', need: (f) => f.bounce && f.chain },
+  { id: 'phantom', name: 'Fantôme', desc: 'Spectral + perçant : portée +30%', need: (f) => f.spectral && f.pierce },
+];
+
+// ---------- Champions : versions colorées plus fortes des monstres
+export const CHAMPIONS = {
+  red: { name: 'Rouge', color: '#ff3a3a', hp: 2.2 },
+  gold: { name: 'Doré', color: '#ffd34a', hp: 1.5 },
+  blue: { name: 'Bleu', color: '#4ab8ff', hp: 1.4, speed: 1.4, rate: 0.7 },
+  purple: { name: 'Violet', color: '#c04aff', hp: 1.6 },
+  green: { name: 'Vert', color: '#5aff6a', hp: 1.6, regen: 0.04 },
+};
+
+// ---------- Arbre de talents (payé en éclats d'âme gagnés à chaque run)
+export const TALENTS = {
+  hp:     { name: 'Robustesse', glyph: '❤️', max: 3, cost: 6, desc: (l) => `+${l} demi-cœur${l > 1 ? 's' : ''} max` },
+  dmg:    { name: 'Puissance', glyph: '⚔️', max: 5, cost: 4, desc: (l) => `Dégâts +${4 * l}%` },
+  rate:   { name: 'Célérité', glyph: '✨', max: 5, cost: 4, desc: (l) => `Cadence +${4 * l}%` },
+  spd:    { name: 'Agilité', glyph: '👟', max: 3, cost: 4, desc: (l) => `Vitesse +${4 * l}%` },
+  luck:   { name: 'Fortune', glyph: '🍀', max: 3, cost: 5, desc: (l) => `Chance +${0.5 * l}` },
+  coins:  { name: 'Héritage', glyph: '🪙', max: 3, cost: 3, desc: (l) => `Commence avec ${3 * l} pièces` },
+  bombs:  { name: 'Artificier', glyph: '💣', max: 3, cost: 3, desc: (l) => `Commence avec +${l} bombe${l > 1 ? 's' : ''}` },
+  keys:   { name: 'Serrurier', glyph: '🔑', max: 2, cost: 4, desc: (l) => `Commence avec +${l} clé${l > 1 ? 's' : ''}` },
+  barter: { name: 'Marchandage', glyph: '⚖️', max: 3, cost: 5, desc: (l) => `Prix en boutique -${l}` },
+  focus:  { name: 'Concentration', glyph: '🔮', max: 2, cost: 8, desc: (l) => (l >= 2 ? 'Sort chargé au départ et +1 charge à chaque étage' : 'Sort chargé au départ') },
+  secondwind: { name: 'Second Souffle', glyph: '🪶', max: 1, cost: 25, desc: () => 'Ressuscite une fois par run' },
+  options: { name: 'Œil du Trésor', glyph: '👁️', max: 1, cost: 20, desc: () => 'Les salles au trésor proposent un objet de plus (tu n\u2019en prends qu\u2019un)' },
+};
+export const talentCost = (id, lvl) => TALENTS[id].cost * lvl; // prix du niveau « lvl »
+
+// ---------- Succès (certains débloquent des objets)
+export const ACHIEVEMENTS = [
+  { id: 'first_boss', name: 'Premier sang', desc: 'Vaincre un boss', item: 'piggy' },
+  { id: 'floor5', name: 'Au cœur du donjon', desc: 'Atteindre l\u2019étage 5', item: 'compass' },
+  { id: 'win', name: 'Libérateur', desc: 'Terminer une run', item: 'treasuremap' },
+  { id: 'win_hard', name: 'Héros légendaire', desc: 'Terminer une run en difficile', item: 'glasscannon' },
+  { id: 'kills500', name: 'Exterminateur', desc: 'Vaincre 500 monstres (au total)', item: 'thornarmor' },
+  { id: 'poop50', name: 'Spécialiste des crottes', desc: 'Casser 50 crottes (au total)', item: 'sackbombs' },
+  { id: 'secret5', name: 'Explorateur', desc: 'Trouver 5 salles secrètes (au total)', item: 'xray' },
+  { id: 'sacrifice', name: 'Sang pour sang', desc: 'Utiliser 5 fois un autel de sacrifice dans une run', item: 'bloodmoon' },
+  { id: 'challenge', name: 'Gladiateur', desc: 'Réussir une salle de défi', item: 'arcanebomb' },
+  { id: 'nohit', name: 'Intouchable', desc: 'Vaincre un boss sans être touché', item: 'magnet' },
+  { id: 'coins99', name: 'Fortune', desc: 'Avoir 99 pièces', item: 'greedring' },
+  { id: 'synergy', name: 'Alchimiste', desc: 'Obtenir une synergie', item: 'keyring' },
+  { id: 'daily', name: 'Habitué', desc: 'Terminer un défi du jour', item: 'skeletonkey' },
+  { id: 'chars3', name: 'Polyvalent', desc: 'Gagner avec 3 sorciers différents' },
+  { id: 'revive', name: 'Frères d\u2019armes', desc: 'Réanimer un allié en multijoueur' },
+];

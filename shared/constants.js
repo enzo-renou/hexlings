@@ -20,6 +20,11 @@ export const T_POT = 7;
 export const T_GPOOP = 8; // crotte dorée (rare, plein de pièces)
 export const DESTRUCT_HP = { 5: 3, 6: 4, 7: 1, 8: 3 };
 export const isDestructible = (t) => t >= 5 && t <= 8;
+// pièges
+export const T_SPIKES = 9;   // piques qui sortent du sol
+export const T_TURRET = 10;  // gargouille qui crache des projectiles
+export const T_CRUMBLE = 11; // sol qui s'effondre
+export const isWalkable = (t) => t === T_FLOOR || t === T_SPIKES || t === T_CRUMBLE;
 
 export const DIRS = {
   up: { dx: 0, dy: -1, tx: 7, ty: 0 },

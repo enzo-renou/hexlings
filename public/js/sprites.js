@@ -658,3 +658,263 @@ export function drawRock(g, px, py, style, B, h) {
       if (h > 0.6) { g.fillStyle = 'rgba(80,120,60,0.5)'; ellipse(g, px + 36, py + 36, 6, 3); }
   }
 }
+
+// ============================================================ BOMBES, CLÉS, COFFRES, AUTEL, PIÈGES, DÉCOR
+export function drawBombSprite(ctx, x, y, t, fuse = 1, big = false) {
+  const r = big ? 11 : 9;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ellipse(ctx, x, y + r, r, r * 0.35);
+  const blink = fuse < 0.6 && Math.floor(t * 16) % 2;
+  ctx.fillStyle = blink ? '#ff3a3a' : big ? '#3a2a5a' : '#26222e';
+  circle(ctx, x, y, r);
+  ctx.fillStyle = blink ? '#ffb0b0' : '#5a5468'; circle(ctx, x - r * 0.35, y - r * 0.35, r * 0.3);
+  ctx.fillStyle = '#7a6a5a'; ctx.fillRect(x - 3, y - r - 3, 6, 4);
+  ctx.strokeStyle = '#c8a070'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y - r - 3); ctx.quadraticCurveTo(x + 4, y - r - 8, x + 7, y - r - 6); ctx.stroke();
+  if (fuse > 0) { ctx.fillStyle = Math.floor(t * 20) % 2 ? '#fff4a0' : '#ff8a2a'; star(ctx, x + 7, y - r - 6, 4, 4, 0.4, t * 10); }
+  if (big) { ctx.fillStyle = '#e07bff'; star(ctx, x + 1, y + 1, 3.5, 5, 0.45); }
+}
+export function drawKeySprite(ctx, x, y) {
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ellipse(ctx, x, y + 9, 8, 3);
+  ctx.fillStyle = '#e8b830';
+  ctx.beginPath(); ctx.arc(x - 6, y, 5, 0, TAU); ctx.fill();
+  ctx.fillRect(x - 2, y - 1.5, 13, 3); ctx.fillRect(x + 7, y, 2.5, 5); ctx.fillRect(x + 3, y, 2.5, 4);
+  ctx.fillStyle = '#1a1020'; circle(ctx, x - 6, y, 2);
+  ctx.fillStyle = '#fff2a0'; ctx.fillRect(x - 8, y - 4, 2, 2);
+}
+export function drawChestSprite(ctx, x, y, gold) {
+  const body = gold ? '#d8a020' : '#8a5a2a', dark = gold ? '#9a6a10' : '#5a3418', band = gold ? '#fff2a0' : '#3a3036';
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ellipse(ctx, x, y + 12, 17, 5);
+  ctx.fillStyle = dark; ctx.fillRect(x - 15, y - 4, 30, 16);
+  ctx.fillStyle = body; ctx.fillRect(x - 15, y - 4, 30, 13);
+  ctx.fillStyle = body; ctx.beginPath(); ctx.moveTo(x - 15, y - 4); ctx.quadraticCurveTo(x, y - 18, x + 15, y - 4); ctx.fill();
+  ctx.fillStyle = band; ctx.fillRect(x - 15, y - 5, 30, 2.5); ctx.fillRect(x - 11, y - 14, 3, 25); ctx.fillRect(x + 8, y - 14, 3, 25);
+  ctx.fillStyle = gold ? '#7a3a10' : '#c8a040'; ctx.fillRect(x - 3, y - 3, 6, 7);
+  if (gold) { ctx.fillStyle = '#1a1020'; ctx.fillRect(x - 1, y, 2, 3); }
+}
+export function drawAltar(ctx, x, y, t, n = 0) {
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ellipse(ctx, x, y + 18, 30, 8);
+  ctx.fillStyle = '#4a3a44'; ctx.fillRect(x - 26, y - 4, 52, 22);
+  ctx.fillStyle = '#6a5464'; ctx.fillRect(x - 30, y - 10, 60, 8);
+  ctx.fillStyle = '#2a1e28'; ctx.fillRect(x - 22, y + 2, 44, 3);
+  // piques sanglantes
+  ctx.fillStyle = '#c8c0c8';
+  for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(x + i * 10 - 4, y - 10); ctx.lineTo(x + i * 10, y - 24 - (i === 0 ? 4 : 0)); ctx.lineTo(x + i * 10 + 4, y - 10); ctx.fill(); }
+  ctx.fillStyle = '#b81830'; for (let i = -2; i <= 2; i++) ctx.fillRect(x + i * 10 - 1, y - 18 - (i === 0 ? 4 : 0), 2, 5);
+  ctx.fillStyle = '#ff3a4a'; ctx.font = `bold 11px ${FONT}`; ctx.textAlign = 'center';
+  // bougies
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = '#e8e0c8'; ctx.fillRect(x + s * 36 - 2, y - 6, 4, 14);
+    ctx.fillStyle = Math.sin(t * 13 + s) > 0 ? '#ffd060' : '#ff8a2a'; ellipse(ctx, x + s * 36, y - 9, 2.5, 4);
+  }
+}
+export function drawSpikes(ctx, px, py, up, t) {
+  ctx.fillStyle = '#3a3440'; ctx.fillRect(px + 3, py + 3, 42, 42);
+  ctx.fillStyle = '#26222c';
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(px + 10 + i * 14, py + 12 + j * 13, 3, 0, TAU); ctx.fill(); }
+  if (up) {
+    for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+      const sx = px + 10 + i * 14, sy = py + 14 + j * 13;
+      ctx.fillStyle = '#d8d8e0'; ctx.beginPath(); ctx.moveTo(sx - 4, sy); ctx.lineTo(sx, sy - 12); ctx.lineTo(sx + 4, sy); ctx.fill();
+      ctx.fillStyle = '#8a8a98'; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - 12); ctx.lineTo(sx + 4, sy); ctx.fill();
+    }
+  }
+}
+export function drawTurret(ctx, px, py, warn, t) {
+  const cx = px + 24, cy = py + 24;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ellipse(ctx, cx, py + 42, 20, 6);
+  ctx.fillStyle = '#5a5668'; ctx.fillRect(px + 6, py + 20, 36, 22);
+  ctx.fillStyle = '#7a7690'; ctx.fillRect(px + 4, py + 16, 40, 6);
+  // tête de gargouille
+  ctx.fillStyle = '#6a667a'; ctx.beginPath(); ctx.arc(cx, py + 14, 13, Math.PI, 0); ctx.fill(); ctx.fillRect(cx - 13, py + 14, 26, 6);
+  ctx.beginPath(); ctx.moveTo(cx - 12, py + 6); ctx.lineTo(cx - 16, py - 2); ctx.lineTo(cx - 7, py + 3); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx + 12, py + 6); ctx.lineTo(cx + 16, py - 2); ctx.lineTo(cx + 7, py + 3); ctx.fill();
+  ctx.fillStyle = warn ? '#ff3a3a' : '#ffb347'; ctx.fillRect(cx - 7, py + 9, 4, 3); ctx.fillRect(cx + 3, py + 9, 4, 3);
+  ctx.fillStyle = '#1a1020'; ctx.fillRect(cx - 5, py + 15, 10, 4);
+  if (warn) glow(ctx, cx, py + 16, 18, '#ff3a3a', 0.6);
+}
+export function drawCrumble(ctx, px, py, state) {
+  ctx.strokeStyle = 'rgba(10,6,12,0.85)'; ctx.lineWidth = 2;
+  const k = state < 0 ? 0.3 : 1 - state / 7;
+  ctx.beginPath();
+  ctx.moveTo(px + 6, py + 10); ctx.lineTo(px + 20, py + 22); ctx.lineTo(px + 16, py + 38);
+  ctx.moveTo(px + 20, py + 22); ctx.lineTo(px + 40, py + 18);
+  ctx.moveTo(px + 30, py + 30); ctx.lineTo(px + 42, py + 42);
+  if (k > 0.5) { ctx.moveTo(px + 8, py + 30); ctx.lineTo(px + 22, py + 30); ctx.moveTo(px + 30, py + 6); ctx.lineTo(px + 26, py + 20); }
+  ctx.stroke();
+  if (state >= 0) { ctx.fillStyle = `rgba(0,0,0,${0.15 + k * 0.5})`; ctx.fillRect(px + 2, py + 2, 44, 44); }
+}
+// statue de gargouille posée contre le mur (décor)
+export function drawStatue(ctx, x, y, B, flip = 1) {
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ellipse(ctx, x, y + 22, 16, 5);
+  ctx.fillStyle = '#4a4656'; ctx.fillRect(x - 13, y + 10, 26, 14);
+  ctx.fillStyle = '#5e5a6c'; ctx.fillRect(x - 15, y + 6, 30, 6);
+  ctx.fillStyle = '#6e6a80';
+  ctx.beginPath(); ctx.moveTo(x - 10, y + 6); ctx.lineTo(x - 8, y - 14); ctx.lineTo(x + 8, y - 14); ctx.lineTo(x + 10, y + 6); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y - 18, 8, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 6, y - 23); ctx.lineTo(x - 9, y - 32); ctx.lineTo(x - 2, y - 25); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x + 6, y - 23); ctx.lineTo(x + 9, y - 32); ctx.lineTo(x + 2, y - 25); ctx.fill();
+  // ailes
+  ctx.fillStyle = '#585468';
+  ctx.beginPath(); ctx.moveTo(x - 8, y - 10); ctx.lineTo(x - 22 * flip, y - 26); ctx.lineTo(x - 18 * flip, y - 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x + 8, y - 10); ctx.lineTo(x + 22 * flip, y - 26); ctx.lineTo(x + 18 * flip, y - 2); ctx.fill();
+  ctx.fillStyle = B ? B.accent : '#ff5a5a'; ctx.fillRect(x - 4, y - 20, 2, 2); ctx.fillRect(x + 2, y - 20, 2, 2);
+}
+export function drawBanner(ctx, x, y, color) {
+  ctx.fillStyle = '#3a2a1a'; ctx.fillRect(x - 12, y - 2, 24, 3);
+  ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.lineTo(x + 10, y); ctx.lineTo(x + 10, y + 26); ctx.lineTo(x, y + 20); ctx.lineTo(x - 10, y + 26); ctx.fill();
+  ctx.fillStyle = '#e8c870'; ctx.fillRect(x - 10, y + 2, 20, 2); star(ctx, x, y + 11, 4);
+}
+export function drawCandles(ctx, x, y, t) {
+  ctx.fillStyle = '#3a2a1a'; ctx.fillRect(x - 10, y + 6, 20, 3); ctx.fillRect(x - 1, y - 4, 2, 10);
+  for (const dx of [-8, 0, 8]) {
+    ctx.fillStyle = '#e8e0c8'; ctx.fillRect(x + dx - 1.5, y - 2 - (dx ? 0 : 4), 3, 8);
+    ctx.fillStyle = Math.sin(t * 12 + dx) > 0 ? '#ffd060' : '#ff9a3a'; ellipse(ctx, x + dx, y - 5 - (dx ? 0 : 4), 1.8, 3);
+  }
+}
+
+// ============================================================ SPRITES DESSINÉS PIXEL PAR PIXEL (sorciers)
+// Légende : H chapeau, h ombre du chapeau, T bordure dorée, S peau, s ombre de peau, E yeux, K joues,
+// R robe, r ombre de robe, b ceinture, B bottes, W bâton, O orbe magique, o reflet
+const WIZ_DOWN = [
+  '..........H.......',
+  '.........HHh......',
+  '.........HHh......',
+  '........HHHHh.....',
+  '........HHHHh.....',
+  '.......HHHTHHh....',
+  '.......HHTTTHh....',
+  '......HHHHTHHHh...',
+  '...TTTTTTTTTTTTT..',
+  '....hhhhhhhhhhh...',
+  '.....SSSSSSSSS.oO.',
+  '.....SESSSSSES.OO.',
+  '.....SESSSSSES..W.',
+  '.....KSSSSSSSK..W.',
+  '......sSSSSSs...W.',
+  '.....RRRRbRRRR.SW.',
+  '....RRRRRbRRRRRSW.',
+  '...SRRRRRbRRRRr.W.',
+  '....RRRRRbRRRRr.W.',
+  '....RRRRRbRRRRRrW.',
+  '...RRRRRRbRRRRRrW.',
+  '...RRRRRRbRRRRRrW.',
+  '...TTTTTTTTTTTTT..',
+  '.....BBB...BBB....',
+  '.....BBB...BBB....',
+];
+const WIZ_SIDE = [
+  '.......HH.........',
+  '.......HHH........',
+  '........HHh.......',
+  '........HHHh......',
+  '.......HHHHh......',
+  '.......HHTHHh.....',
+  '......HHTTTHh.....',
+  '......HHHTHHHh....',
+  '....TTTTTTTTTTTT..',
+  '.....hhhhhhhhhh...',
+  '......SSSSSSSS.oO.',
+  '......sSSSSSESSOO.',
+  '......sSSSSSESS.W.',
+  '......sSSSSSSKS.W.',
+  '.......sSSSSS...W.',
+  '......RRRRRRbRRSW.',
+  '.....RRRRRRRbRRSW.',
+  '.....rRRRRRRbRR.W.',
+  '.....rRRRRRRbRR.W.',
+  '.....rRRRRRRbRRRW.',
+  '....rrRRRRRRbRRRW.',
+  '....rrRRRRRRbRRRW.',
+  '....TTTTTTTTTTTT..',
+  '......BBB.BBBB....',
+  '......BBB.BBBB....',
+];
+const WIZ_BACK = [
+  '..........H.......',
+  '.........HHh......',
+  '.........HHh......',
+  '........HHHHh.....',
+  '........HHHHh.....',
+  '.......HHHHHHh....',
+  '.......HHHHHHh....',
+  '......HHHHHHHHh...',
+  '...TTTTTTTTTTTTT..',
+  '....hhhhhhhhhhh.oO',
+  '.....hhhhhhhhh..OO',
+  '.....hhhhhhhhh..W.',
+  '.....shhhhhhhs..W.',
+  '......shhhhhs...W.',
+  '......sssssss...W.',
+  '.....RRRRRRRRR.SW.',
+  '....RRRRRRRRRRRSW.',
+  '...SRRRRRRRRRRr.W.',
+  '....RRRRRRRRRRr.W.',
+  '....RRRRRRRRRRRrW.',
+  '...RRRRRRRRRRRRrW.',
+  '...RRRRRRRRRRRRrW.',
+  '...TTTTTTTTTTTTT..',
+  '.....BBB...BBB....',
+  '.....BBB...BBB....',
+];
+
+const FEET = {
+  idle: ['.....BBB...BBB....', '.....BBB...BBB....'],
+  a: ['.....BBB...BBB....', '.....BBB..........'],
+  b: ['.....BBB...BBB....', '...........BBB....'],
+};
+const FEET_SIDE = {
+  idle: ['......BBB.BBBB....', '......BBB.BBBB....'],
+  a: ['.....BBB...BBB....', '....BBB.......BBB.'],
+  b: ['......BBBBBB......', '.......BBBB.......'],
+};
+function darker(hex, k = 0.68) { const n = parseInt(hex.slice(1), 16); const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v * k)); return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join(''); }
+const spriteCache = new Map();
+function wizSprite(ch, dir, step, flash) {
+  const key = ch.name + dir + step + (flash ? 1 : 0);
+  let c = spriteCache.get(key);
+  if (c) return c;
+  const base = dir === 'side' ? WIZ_SIDE : dir === 'back' ? WIZ_BACK : WIZ_DOWN;
+  const rows = base.slice(0, 23).concat((dir === 'side' ? FEET_SIDE : FEET)[step]);
+  const pal = {
+    H: ch.hat, h: darker(ch.hat), T: ch.trim, S: ch.skin, s: darker(ch.skin, 0.85), E: '#1a1020', K: '#f0a0a0',
+    R: ch.robe, r: darker(ch.robe), b: ch.trim, B: '#3a2418', W: '#6b4a2b', O: ch.shot, o: '#ffffff', Y: ch.beard || ch.skin,
+  };
+  c = document.createElement('canvas');
+  c.width = 18; c.height = 25;
+  const g = c.getContext('2d');
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      let k = row[x];
+      if (k === '.') continue;
+      if (ch.beard && dir !== 'back' && y >= 13 && y <= 15 && 'SsK'.includes(k)) k = 'Y';
+      g.fillStyle = flash ? '#ffffff' : pal[k];
+      g.fillRect(x, y, 1, 1);
+    }
+  });
+  spriteCache.set(key, c);
+  return c;
+}
+// Dessine un sorcier en vrai pixel art (1 pixel du sprite = 2 unités du jeu)
+export function drawPixelWizard(ctx, x, y, ch, o = {}) {
+  const fx = o.fx ?? 0, fy = o.fy ?? 1;
+  const dir = fy < -0.5 ? 'back' : Math.abs(fx) > 0.5 ? 'side' : 'down';
+  const flip = dir === 'side' && fx < 0;
+  const t = o.t || 0;
+  const step = o.moving ? (Math.floor(t * 8) % 2 ? 'a' : 'b') : 'idle';
+  const bob = o.moving && Math.floor(t * 8) % 2 ? -2 : 0;
+  const sc = (o.scale || 1) * (o.px || 2);
+  ctx.save();
+  ctx.translate(x, y);
+  if (o.rot) ctx.rotate(o.rot);
+  if (o.alpha != null) ctx.globalAlpha *= o.alpha;
+  if (!o.ghost && !o.noShadow) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(0, 13, 12 * (sc / 2), 4.5 * (sc / 2), 0, 0, TAU); ctx.fill(); }
+  if (flip) ctx.scale(-1, 1);
+  if (o.cast) ctx.scale(1 + o.cast * 0.06, 1 - o.cast * 0.05);
+  const prev = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(wizSprite(ch, dir, step, o.flash), -9 * sc, 14 - 25 * sc + bob, 18 * sc, 25 * sc);
+  ctx.imageSmoothingEnabled = prev;
+  // lueur de l'orbe du bâton (plus forte quand on lance un sort)
+  const ox = 15.5 * sc - 9 * sc, oy = 14 - 25 * sc + bob + 10.5 * sc;
+  glow(ctx, ox, oy, 6 * (sc / 2) + (o.cast || 0) * 8, ch.shot, 0.7);
+  ctx.restore();
+}

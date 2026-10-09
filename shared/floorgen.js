@@ -1,7 +1,7 @@
 // Génération procédurale d'un étage, façon Binding of Isaac :
 // une grille de salles reliées par des portes, la salle du boss au bout
 // du plus long chemin, une salle au trésor et une boutique en cul-de-sac.
-import { ROOM_W, ROOM_H, T_FLOOR, T_WALL, T_ROCK, T_PIT, T_DOOR, T_POOP, T_FIRE, T_POT, T_GPOOP, DESTRUCT_HP, DIRS, DIR_NAMES } from './constants.js';
+import { ROOM_W, ROOM_H, T_FLOOR, T_WALL, T_ROCK, T_PIT, T_DOOR, T_POOP, T_FIRE, T_POT, T_GPOOP, T_SPIKES, T_TURRET, T_CRUMBLE, DESTRUCT_HP, DIRS, DIR_NAMES, OPP } from './constants.js';
 
 const GW = 9, GH = 9;
 
@@ -74,16 +74,46 @@ export function generateFloor(rng, floor, biome) {
     start.type = 'start';
     boss.type = 'boss';
     rest[0].type = 'treasure';
+    rest[0].locked = floor >= 2; // à partir de l'étage 2, il faut une clé
     rest[1].type = 'shop';
+    // salles spéciales en cul-de-sac (si la carte en a assez)
+    const extra = rest.slice(2);
+    const want = [];
+    if (rng.chance(0.5)) want.push('challenge');
+    if (floor >= 2 && rng.chance(0.55)) want.push('curse');
+    if (floor >= 2 && rng.chance(0.45)) want.push('sacrifice');
+    for (const t of want) { const r = extra.shift(); if (r) r.type = t; }
+
+    // salle secrète : une case vide collée à plusieurs salles (pas au boss)
+    const isBossN = (x, y) => DIR_NAMES.some((d) => { const n = grid.get(key(x + DIRS[d].dx, y + DIRS[d].dy)); return n === boss; });
+    const cands = [];
+    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+      if (grid.has(key(x, y)) || isBossN(x, y)) continue;
+      const n = nCount(x, y);
+      if (n >= 1) cands.push({ x, y, n: n + rng.next() * 0.5 });
+    }
+    cands.sort((a, b) => b.n - a.n);
+    let secret = null;
+    if (cands.length) {
+      secret = { gx: cands[0].x, gy: cands[0].y, type: 'secret' };
+      grid.set(key(secret.gx, secret.gy), secret);
+      rooms.push(secret);
+    }
 
     for (const r of rooms) {
       r.doors = {};
-      for (const d of DIR_NAMES) r.doors[d] = grid.has(key(r.gx + DIRS[d].dx, r.gy + DIRS[d].dy));
+      r.hidden = {};
+      for (const d of DIR_NAMES) {
+        const n = grid.get(key(r.gx + DIRS[d].dx, r.gy + DIRS[d].dy));
+        r.doors[d] = !!n;
+        if (n && n.type === 'secret' && r.type !== 'secret') { r.doors[d] = false; r.hidden[d] = true; }
+      }
       r.tiles = buildTiles(rng, r, floor);
       r.thp = {};
       if (biome && (r.type === 'normal' || (r.type === 'boss' && rng.chance(0.4)))) placeDestructibles(rng, r, biome);
+      if (r.type === 'normal' && floor >= 2) placeTraps(rng, r, floor);
       r.visited = false;
-      r.cleared = r.type !== 'normal' && r.type !== 'boss';
+      r.cleared = !['normal', 'boss', 'challenge'].includes(r.type);
       r.populated = false;
       r.pickups = [];
     }
@@ -97,6 +127,7 @@ function buildTiles(rng, room, floor) {
   if (room.type === 'normal') layoutIdx = rng.int(0, LAYOUTS.length - 1);
   else if (room.type === 'boss') layoutIdx = rng.pick([0, 0, 1, 2]);
   else if (room.type === 'treasure') layoutIdx = rng.pick([0, 1, 2]);
+  else if (room.type === 'challenge') layoutIdx = rng.pick([0, 1, 2, 6]);
   const inner = LAYOUTS[layoutIdx].map((row) => row.split(''));
   // miroirs aléatoires pour plus de variété
   if (rng.chance(0.5)) inner.forEach((row) => row.reverse());
@@ -209,4 +240,50 @@ function doorsConnected(t) {
     }
   }
   return entries.every((e) => seen.has(e));
+}
+
+// Pièges : piques, gargouilles qui tirent, sol qui s'effondre
+function placeTraps(rng, room, floor) {
+  const t = room.tiles;
+  const banned = new Set([[7, 1], [7, 7], [1, 4], [13, 4], [7, 2], [7, 6], [2, 4], [12, 4], [7, 4], [6, 4], [8, 4]].map(([x, y]) => y * ROOM_W + x));
+  const free = () => {
+    const out = [];
+    for (let y = 1; y < ROOM_H - 1; y++) for (let x = 1; x < ROOM_W - 1; x++) {
+      const i = y * ROOM_W + x;
+      if (t[i] === T_FLOOR && !banned.has(i)) out.push(i);
+    }
+    return out;
+  };
+  room.trap = {};
+  // rangées de piques
+  if (rng.chance(0.35)) {
+    const n = rng.int(1, 2);
+    for (let k = 0; k < n; k++) {
+      const f = free(); if (!f.length) break;
+      const i0 = rng.pick(f);
+      const [dx, dy] = rng.pick([[1, 0], [0, 1]]);
+      for (let j = 0; j < rng.int(2, 4); j++) {
+        const x = (i0 % ROOM_W) + dx * j, y = ((i0 / ROOM_W) | 0) + dy * j;
+        const i = y * ROOM_W + x;
+        if (x > 0 && y > 0 && x < ROOM_W - 1 && y < ROOM_H - 1 && t[i] === T_FLOOR && !banned.has(i)) t[i] = T_SPIKES;
+      }
+    }
+  }
+  // gargouilles (étage 3+)
+  if (floor >= 3 && rng.chance(0.3)) {
+    const f = free();
+    if (f.length) {
+      const i = rng.pick(f);
+      t[i] = T_TURRET;
+      if (!doorsConnected(t)) t[i] = T_FLOOR; else room.trap[i] = rng.range(0.5, 2);
+    }
+  }
+  // sol fragile (étage 4+)
+  if (floor >= 4 && rng.chance(0.3)) {
+    const f = free();
+    for (let k = 0; k < rng.int(2, 5) && f.length; k++) {
+      const i = f.splice(rng.int(0, f.length - 1), 1)[0];
+      t[i] = T_CRUMBLE;
+    }
+  }
 }

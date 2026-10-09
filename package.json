@@ -7,11 +7,14 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test/sim.mjs"
+    "test": "node test/features.mjs && node test/doors.mjs && node test/sim.mjs"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "express": "^4.21.2",
+    "pg": "^8.23.1",
     "socket.io": "^4.8.1"
   }
 }

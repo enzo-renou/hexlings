@@ -1,40 +1,39 @@
 # 🧙 Hexlings — Les petits sorciers du donjon
 
-Roguelike d'action dans le navigateur, inspiré de *The Binding of Isaac*, jouable **en solo ou jusqu'à 4 en ligne**.
+Roguelike d'action en pixel art dans le navigateur, inspiré de *The Binding of Isaac*, jouable **en solo ou jusqu'à 4 en ligne**.
 Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaque run est différente.
 
 ## Le jeu
 
-- **Salles façon Isaac** : chaque salle contient des monstres et des obstacles (rochers, fosses). Les portes se ferment tant que la salle n'est pas nettoyée.
-- **Étages générés** : une carte de salles différente à chaque fois, avec une **salle au trésor ★**, une **boutique $** et la **salle du boss ☠** au bout du chemin.
-- **Biomes** (comme les chapitres d'Isaac) : tous les 2 étages, un biome tiré entre deux, chacun avec ses monstres, ses boss, ses obstacles, son ambiance et sa musique :
-  - Étages 1-2 : **Château Hanté** (gluants, squelettes, chauves-souris) ou **Forêt Enchantée** (plantes carnivores, fées, loups — boss : la Mère Carnivore)
-  - Étages 3-4 : **Cimetière des Brumes** (fantômes, zombies — boss : le Fossoyeur) ou **Grottes de Cristal** (golems, araignée)
-  - Étage 5 : **Sanctuaire de la Liche**
-  - Étages 6-7 : **Bibliothèque Interdite** (grimoires volants — boss : le Grand Grimoire) ou **Forge Volcanique** (lave — boss : la Salamandre de Lave)
-  - Étages 8-9 : **Abîme Astral** ou **Palais de Givre** (boss : la Reine de Givre)
-  - Étage 10 : **Tour de l'Archimage**
-- **Obstacles destructibles** : crottes (dont la rare crotte dorée), vases et feux. On les casse en tirant dessus pour trouver des pièces ou des cœurs. Attention, les feux brûlent au contact !
-- **Effets** : glissement de caméra entre les salles, portes qui claquent et s'ouvrent, chute dans la trappe et ouverture en iris à chaque étage, éclairage dynamique (torches, feux, sorts), traînées et éclats de tirs, animations des monstres (apparition, écrasement, mort, taches au sol), ambiance par biome (feuilles, lucioles, brume, braises, neige...).
-- **Sons et musique** générés en direct : chaque sorcier a son bruit de tir, et la musique change selon le biome et s'intensifie en combat et contre les boss.
-- **Multijoueur** : jusqu'à 4 sorciers dans la même salle. **Tout le monde doit se tenir sur la même porte** pour passer à la salle suivante (et dans la trappe pour descendre). Un joueur tombé devient un fantôme et revient à l'étage suivant.
-- **10 étages** : un boss à chaque fin d'étage, un **gros boss à l'étage 5** (la Liche Gardienne) et un **boss final à l'étage 10** (Vorthan, l'Archimage Déchu).
-- **36 objets** : bonus de stats, malus, et nouvelles façons d'attaquer (tête chercheuse, triple tir, tirs explosifs, rebonds, foudre en chaîne, poison, gel, orbes protectrices...).
-- **6 sorts** (touche Espace) qui se rechargent en nettoyant des salles.
-- **6 sorciers** : Pyra, Glacius, Sylva, Volt, + Morgane (vaincre le boss de l'étage 5) et Bricolo (terminer une run).
-- **Progression permanente** : terminer les 10 étages rapporte une **relique** au hasard (vitesse +10 %, cadence +10 %, +1 cœur...). On en équipe 1 au départ, +1 emplacement toutes les 3 victoires. Gagner une relique déjà possédée l'améliore (niveau 3 max).
-- **Sauvegarde** dans le navigateur (localStorage), avec un code d'export/import pour la transférer.
+- **Salles façon Isaac** : monstres, rochers, fosses, crottes, vases et feux à casser, pièges (piques, gargouilles qui crachent, sol qui s'effondre). Les portes se ferment tant que la salle n'est pas nettoyée.
+- **Étages générés** avec salle au trésor ★ (fermée à clé dès l'étage 2), boutique $, boss ☠, **salle secrète** (à ouvrir à la bombe), **salle de défi** ⚔ (vagues d'ennemis), **salle maudite** ✝ (objets maudits, la porte griffe), **autel de sacrifice** ▲ (un cœur contre des récompenses de plus en plus belles).
+- **Bombes, clés, coffres** (et coffres dorés qui demandent une clé).
+- **Biomes** (2 étages chacun, tirés au hasard) : Château Hanté ou Forêt Enchantée, Cimetière des Brumes ou Grottes de Cristal, Sanctuaire de la Liche (gros boss à l'étage 5), Bibliothèque Interdite ou Forge Volcanique, Abîme Astral ou Palais de Givre, puis la Tour de l'Archimage (boss final).
+- **Monstres champions** (rouges, dorés, bleus, violets, verts), plus forts et avec un meilleur butin.
+- **59 objets** (dont des objets **maudits** : gros bonus, gros malus) et **8 synergies** quand deux pouvoirs se combinent.
+- **Modes** : normal, **difficile** (débloqué après une victoire) et **défi du jour** (le même donjon pour tout le monde).
+- **Multijoueur** jusqu'à 4 : tout le monde sur la même porte pour avancer, **réanimer un allié** en restant près de son fantôme, **rejoindre une partie en cours**, **reconnexion** automatique (90 s), **ping** « par ici ! », et prédiction de mouvement pour un jeu réactif même avec du lag.
 
-## Commandes
+## Progression
 
-| Touche | Action |
+- **Reliques** : terminer les 10 étages en rapporte une (bonus permanent, jusqu'au niveau 3).
+- **Éclats d'âme ◆** gagnés à chaque run (même perdue) → **arbre de talents** (12 talents : vie, dégâts, cadence, bombes de départ, prix réduits, résurrection...).
+- **15 succès**, dont la plupart **débloquent de nouveaux objets**.
+- **Encyclopédie** : objets, monstres, boss, succès et synergies découverts.
+- **Compte en ligne** (facultatif) : ta progression te suit sur tous tes appareils. **Classement** normal / difficile / défi du jour.
+
+## Commandes (toutes modifiables dans ⚙ Paramètres)
+
+| Touche par défaut | Action |
 | --- | --- |
 | ZQSD / WASD | Se déplacer |
-| Flèches ou clic gauche maintenu | Lancer des sorts |
-| Espace ou clic droit | Sort spécial |
-| Échap | Pause |
-| M / N | Couper le son / la musique |
-| Manette | Stick gauche / stick droit / A |
+| Flèches | Lancer des sorts (haut, bas, gauche, droite) |
+| Espace | Sort spécial |
+| E | Poser une bombe |
+| F | Signaler (« par ici ! ») |
+| Tab (maintenir) | Carte de l'étage |
+| Échap ou ⚙ | Paramètres : volumes, touches, plein écran, abandon de la run |
+| Manette | Stick gauche / stick droit ou A-B-X-Y / gâchettes |
 
 ## Lancer en local
 
@@ -45,63 +44,45 @@ npm install
 npm start
 ```
 
-Puis ouvre http://localhost:3000. Pour tester le multi en local, ouvre deux onglets.
+Puis ouvre http://localhost:3000 (deux onglets pour tester le multi).
+Sans base de données, les comptes et le classement sont stockés dans `data/db.json`.
 
-Tests automatiques (simule 12 runs complètes de 1 à 4 joueurs) :
+Tests automatiques (mécaniques une par une + 12 runs complètes simulées) :
 
 ```bash
 npm test
 ```
 
-## Mettre sur GitHub
-
-```bash
-git init
-git add .
-git commit -m "Hexlings : première version jouable"
-git branch -M main
-git remote add origin https://github.com/TON-PSEUDO/hexlings.git
-git push -u origin main
-```
+Ils tournent aussi tout seuls sur GitHub à chaque `git push` (onglet **Actions** du dépôt).
 
 ## Déployer sur Render
 
-1. Sur [render.com](https://render.com) : **New → Blueprint**, choisis ton dépôt GitHub (le fichier `render.yaml` configure tout).
-   Ou **New → Web Service** avec : Build `npm install`, Start `npm start`.
-2. Render donne une adresse du type `https://hexlings.onrender.com` : c'est ton jeu, multi compris.
-3. Chaque `git push` redéploie automatiquement.
+1. Sur [render.com](https://render.com) : **New → Blueprint**, choisis ton dépôt GitHub (`render.yaml` configure tout).
+2. **Comptes et classement durables** : le disque de Render gratuit est effacé à chaque redémarrage. Crée une base Postgres gratuite sur [Supabase](https://supabase.com) ou [Neon](https://neon.tech), copie son adresse de connexion (`postgresql://...`) et colle-la dans Render → ton service → **Environment** → `DATABASE_URL`. Les tables se créent toutes seules.
+3. Chaque `git push` redéploie le jeu.
 
 > Le plan gratuit de Render met le serveur en veille après 15 min sans visite : le premier chargement peut prendre ~30 s.
 
 ## Organisation du code
 
 ```
-server.js            Serveur Express + Socket.io (salons de 4, simulation 60 fois/s, envoi 30 fois/s)
+server.js            Serveur : parties multi (salons, reconnexion), API comptes & classement
+server/store.js      Stockage : Postgres (DATABASE_URL) ou fichier local
 shared/              Code commun navigateur + serveur
-  constants.js       Tailles, thèmes des étages
-  data.js            ⭐ Sorciers, objets, sorts, reliques, monstres, boss — c'est ici qu'on équilibre
+  data.js            ⭐ Sorciers, objets, sorts, reliques, monstres, boss, synergies, talents, succès
   biomes.js          ⭐ Biomes : couleurs, monstres, boss, obstacles, musique
-  floorgen.js        Génération des étages et des salles
-  game.js            La simulation (déplacements, tirs, IA, boss, objets, portes)
-  rng.js             Aléatoire à graine (une graine = une run reproductible)
+  game.js            La simulation (combat, IA, boss, objets, bombes, pièges, salles spéciales)
+  floorgen.js        Génération des étages, salles secrètes, pièges
+  constants.js, rng.js
 public/
-  index.html, style.css
-  js/main.js         Menus, boucle de jeu, solo / multi
-  js/render.js       Rendu des salles, animations, éclairage, interface
-  js/sprites.js      Dessin des sorciers, monstres et obstacles
-  js/net.js          Connexion multi + interpolation
-  js/meta.js         Progression sauvegardée
-  js/input.js        Clavier, souris, manette
-  js/audio.js        Sons synthétisés + musique procédurale
-test/                Simulations automatiques
+  js/main.js         Menus, boucle de jeu, solo / multi, succès
+  js/render.js       Rendu pixel art, animations, éclairage, interface
+  js/sprites.js      Sorciers dessinés pixel par pixel, monstres, décors
+  js/pixel.js        Passe pixel art (tramage, contours) + textures de donjon
+  js/screens.js      Talents, encyclopédie, classement, compte
+  js/intro.js        Cinématique d'introduction
+  js/audio.js        Sons et musiques composées (Web Audio)
+  js/net.js, predict.js, input.js, meta.js
+test/                Tests automatiques
+.github/workflows/   Tests sur GitHub
 ```
-
-En solo, la simulation tourne dans le navigateur. En multi, elle tourne sur le serveur (le serveur fait foi) et les navigateurs affichent l'état reçu.
-
-## Pistes pour la suite
-
-- Comptes en ligne (base de données) pour garder la progression entre appareils
-- Salles secrètes, bombes, clés et coffres
-- Plus de monstres, de boss et d'objets ; synergies entre objets
-- Vrais sprites en pixel art
-- Prédiction côté client pour un multi encore plus réactif

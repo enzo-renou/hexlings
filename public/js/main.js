@@ -3,10 +3,16 @@
 // ============================================================
 import { Game } from '/shared/game.js';
 import { DT } from '/shared/constants.js';
-import { CHARACTERS, CHAR_ORDER, ITEMS, RELICS } from '/shared/data.js';
+import { CHARACTERS, CHAR_ORDER, ITEMS, RELICS, ACHIEVEMENTS } from '/shared/data.js';
+import { dailySeed, todayKey } from '/shared/rng.js';
+import { Predictor } from './predict.js';
+import { renderTalents, renderCodex, renderLeaderboard, renderAccount, wireAccount } from './screens.js';
+import { playIntro } from './intro.js';
 import { BIOMES } from '/shared/biomes.js';
-import { Renderer, drawWizard } from './render.js';
-import { Input } from './input.js';
+import { Renderer } from './render.js';
+import { drawPixelWizard } from './sprites.js';
+import { Input, ACTIONS, DEFAULT_KEYS, keyLabel } from './input.js';
+import { menuTexture, pixelize } from './pixel.js';
 import { Net } from './net.js';
 import { meta } from './meta.js';
 import { audio } from './audio.js';
@@ -14,10 +20,25 @@ import { audio } from './audio.js';
 const $ = (s) => document.querySelector(s);
 const canvas = $('#game');
 const renderer = new Renderer(canvas);
-const input = new Input(canvas);
+const input = new Input();
 meta.load();
 audio.setMuted(!!meta.data.muted);
 audio.setMusicMuted(!!meta.data.musicMuted);
+const S0 = meta.data.settings;
+audio.setVolumes(S0.sfx, S0.music);
+input.setBindings(S0.keys);
+renderer.shakeOn = S0.shake !== false;
+document.documentElement.style.setProperty('--stone', `url(${menuTexture()})`);
+function refreshKeyNames() {
+  const b = input.bind;
+  renderer.keyNames = {
+    move: [b.up, b.left, b.down, b.right].map(keyLabel).join(''),
+    shoot: [b.shootUp, b.shootLeft, b.shootDown, b.shootRight].map(keyLabel).join(' '),
+    spell: keyLabel(b.spell), bomb: keyLabel(b.bomb), map: keyLabel(b.map),
+  };
+}
+refreshKeyNames();
+setTimeout(refreshKeyNames, 500);
 
 let mode = null;      // 'solo' | 'multi' | null
 let game = null;      // simulation locale (solo)
@@ -31,10 +52,16 @@ let lastT = performance.now();
 let selChar = meta.data.unlocked.includes(meta.data.lastChar) ? meta.data.lastChar : 'pyra';
 let lastSnap = null;
 let runStart = 0;
+let difficulty = meta.data.difficulty === 'hard' && meta.data.wins > 0 ? 'hard' : 'normal';
+let runMode = 'normal'; // normal | hard | daily
+const predictor = new Predictor();
+let runAch = [];        // succès gagnés pendant la run
 
 // ---------------------------------------------------------- écrans
-const screens = ['#screen-title', '#screen-lobby', '#screen-pause', '#screen-end', '#modal-help', '#modal-save'];
+const screens = ['#screen-title', '#screen-lobby', '#modal-settings', '#screen-end', '#modal-save', '#screen-talents', '#screen-codex', '#screen-leaderboard', '#modal-account', '#screen-intro'];
+let currentScreen = '#screen-title';
 function show(id) {
+  if (id !== '#modal-settings') currentScreen = id;
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
   document.body.classList.toggle('playing', inGame);
 }
@@ -45,16 +72,18 @@ function myName() {
   return n;
 }
 function playerInfo() {
-  return { name: myName(), charId: selChar, relics: meta.equippedRelics() };
+  return { name: myName(), charId: selChar, relics: meta.equippedRelics(), talents: { ...meta.data.talents }, unlockedItems: meta.unlockedItems() };
 }
 
 // ---------------------------------------------------------- portraits
 function portrait(charId, size = 96) {
+  // portrait en pixel art : petit dessin, contour sombre, agrandi sans flou
   const c = document.createElement('canvas');
-  c.width = size * 2; c.height = size * 2;
-  const g = c.getContext('2d');
-  g.scale(2, 2);
-  drawWizard(g, size / 2, size * 0.62, CHARACTERS[charId], { scale: size / 50, fx: 0.4, fy: 1, t: 0.3 });
+  c.width = 24; c.height = 30;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  drawPixelWizard(g, 12, 15, CHARACTERS[charId], { px: 1, fx: 0, fy: 1, noShadow: true });
+  pixelize(g, 24, 30, { outline: true });
+  c.style.width = size + 'px'; c.style.height = size + 'px';
   return c;
 }
 
@@ -126,16 +155,31 @@ function renderTitle() {
   showCharInfo(selChar);
   renderRelics();
   const d = meta.data;
-  $('#profile-stats').textContent = `Runs : ${d.runs} · Victoires : ${d.wins} · Meilleur étage : ${d.bestFloor || '-'} · Monstres vaincus : ${d.kills}`;
-  $('#btn-mute').textContent = `Son : ${audio.muted ? 'non' : 'oui'}`;
-  $('#btn-music').textContent = `Musique : ${audio.musicMuted ? 'non' : 'oui'}`;
+  $('#profile-stats').textContent = `Runs : ${d.runs} · Victoires : ${d.wins} · Meilleur étage : ${d.bestFloor || '-'} · Monstres vaincus : ${d.kills} · Succès : ${d.achievements.length}/${ACHIEVEMENTS.length}`;
+  $('#nav-shards').textContent = `◆ ${d.shards}`;
+  renderAccount();
+  const hardOk = d.wins > 0;
+  if (!hardOk) difficulty = 'normal';
+  document.querySelectorAll('#diff .seg').forEach((b) => {
+    b.classList.toggle('on', b.dataset.diff === difficulty);
+    b.classList.toggle('locked', b.dataset.diff === 'hard' && !hardOk);
+    b.title = b.dataset.diff === 'hard' && !hardOk ? 'Termine une run pour débloquer le mode difficile' : '';
+  });
+  const dailyDone = d.daily.day === todayKey() && d.daily.done;
+  $('#btn-daily').textContent = dailyDone ? '📅 Défi du jour (déjà joué aujourd’hui)' : '📅 Défi du jour';
+
 }
 
 // ---------------------------------------------------------- solo
-function startSolo() {
+function startSolo(daily = false) {
   audio.unlock();
   mode = 'solo';
-  game = new Game({ players: [{ id: 'local', ...playerInfo() }] });
+  runMode = daily ? 'daily' : difficulty;
+  if (daily) { meta.data.daily = { day: todayKey(), done: true }; meta.save(); }
+  game = new Game({
+    seed: daily ? dailySeed() : undefined, difficulty: daily ? 'normal' : difficulty, daily: daily ? todayKey() : null,
+    unlockedItems: meta.unlockedItems(), players: [{ id: 'local', ...playerInfo() }],
+  });
   beginRun();
 }
 
@@ -146,6 +190,8 @@ function beginRun() {
   acc = 0;
   runStart = performance.now();
   renderer.reset();
+  predictor.reset();
+  runAch = [];
   musicBiome = null;
   meta.data.runs++;
   meta.save();
@@ -160,7 +206,12 @@ function ensureNet() {
     lobby = l;
     if (!inGame) renderLobby();
   });
-  net.on('started', () => { mode = 'multi'; beginRun(); });
+  net.on('started', () => { mode = 'multi'; runMode = lobby?.daily ? 'daily' : lobby?.difficulty || 'normal'; beginRun(); });
+  net.on('rejoined', (r) => {
+    lobby = r.lobby;
+    if (r.inGame && !inGame) { mode = 'multi'; runMode = lobby.daily ? 'daily' : lobby.difficulty; beginRun(); meta.data.runs--; }
+    else if (!r.inGame) { renderLobby(); show('#screen-lobby'); }
+  });
   net.on('backToLobby', () => { inGame = false; ended = false; renderLobby(); show('#screen-lobby'); });
   net.on('events', (evs, s) => { if (mode === 'multi' && inGame) handleEvents(evs, s, net.id); });
   net.on('disconnect', () => {
@@ -176,7 +227,7 @@ function ensureNet() {
 async function createLobby() {
   audio.unlock();
   try {
-    const r = await ensureNet().create(playerInfo());
+    const r = await ensureNet().create({ ...playerInfo(), difficulty });
     if (!r?.ok) throw new Error(r?.error || 'Erreur');
     lobby = r.lobby;
     renderLobby();
@@ -193,6 +244,7 @@ async function joinLobby(code) {
     const r = await ensureNet().join(code, playerInfo());
     if (!r?.ok) { $('#title-msg').textContent = r?.error || 'Impossible de rejoindre'; return; }
     lobby = r.lobby;
+    if (r.inGame) { mode = 'multi'; runMode = lobby.daily ? 'daily' : lobby.difficulty; beginRun(); return; }
     renderLobby();
     show('#screen-lobby');
   } catch (e) {
@@ -219,6 +271,12 @@ function renderLobby() {
   }
   renderChars($('#lobby-chars'), (id) => net.update({ charId: id }));
   const host = lobby.host === net.id;
+  const cur = lobby.daily ? 'daily' : lobby.difficulty;
+  document.querySelectorAll('#lobby-diff .seg').forEach((b) => {
+    b.classList.toggle('on', b.dataset.diff === cur);
+    b.disabled = !host;
+    b.onclick = () => { if (!host) return; net.update({ difficulty: b.dataset.diff === 'hard' ? 'hard' : 'normal', daily: b.dataset.diff === 'daily' }); };
+  });
   $('#btn-start').disabled = !host;
   $('#btn-start').textContent = host ? `Lancer la partie (${lobby.players.length}/4)` : 'L’hôte va lancer la partie...';
 }
@@ -274,9 +332,44 @@ function handleEvents(evs, snap, meId) {
         if (ev.n > meta.data.bestFloor) { meta.data.bestFloor = ev.n; meta.save(); }
         break;
       case 'unlock': meta.unlock(ev.char); break;
+      case 'bombset': audio.play('bombset'); break;
+      case 'rockbreak': audio.play('rock'); break;
+      case 'secret':
+        if (!ev.silent) { audio.play('secret'); meta.data.stats.secrets++; meta.save(); if (meta.data.stats.secrets >= 5) achieve('secret5'); }
+        break;
+      case 'chest': audio.play('chest'); break;
+      case 'needkey': if (mine) audio.play('nokey'); break;
+      case 'doorunlock': audio.play('unlock'); break;
+      case 'gotbomb': case 'gotkey': if (mine) audio.play('pickup'); break;
+      case 'sacrifice': audio.play('sacrifice'); if (mine && ev.n >= 5) achieve('sacrifice'); break;
+      case 'synergy': audio.play('synergy'); if (mine) achieve('synergy'); break;
+      case 'wave': audio.play('wave'); break;
+      case 'challengeDone': audio.play('clear'); achieve('challenge'); break;
+      case 'collapse': audio.play('collapse'); break;
+      case 'toxic': audio.play('toxic'); break;
+      case 'ping': audio.play('ping'); break;
+      case 'allyrevive': audio.play('revive'); if (ev.by === meId) achieve('revive'); break;
+      case 'bossdown':
+        achieve('first_boss');
+        if (ev.nohit && ev.nohit.includes(meId)) achieve('nohit');
+        break;
     }
+    if (ev.k === 'floor' && ev.n >= 5) achieve('floor5');
+    if (ev.k === 'tbreak' && (ev.t === 5 || ev.t === 8) && ev.pid === meId) { meta.data.stats.poop++; if (meta.data.stats.poop >= 50) achieve('poop50'); }
+    if (ev.k === 'die') meta.seeEnemy(ev.t, ev.boss);
   }
+  const me = snap.players.find((p) => p.id === meId);
+  if (me && me.coins >= 99) achieve('coins99');
+  if (me && meta.data.kills + me.kills >= 500) achieve('kills500');
   updateMusic(snap);
+}
+
+function achieve(id) {
+  const a = meta.achieve(id);
+  if (!a) return;
+  runAch.push(a);
+  audio.play('achievement');
+  renderer.toast(`Succès : ${a.name}`, a.item ? `Nouvel objet débloqué : ${ITEMS[a.item].glyph} ${ITEMS[a.item].name}` : a.desc, '#ffe08a', '🏆');
 }
 
 // ---------------------------------------------------------- fin de run
@@ -286,7 +379,29 @@ function endRun(snap, meId) {
   const me = snap.players.find((p) => p.id === meId);
   meta.data.kills += me ? me.kills : 0;
   if (win) meta.data.wins++; else meta.data.deaths++;
+  if (win) {
+    achieve('win');
+    if (runMode === 'hard') achieve('win_hard');
+    if (runMode === 'daily') achieve('daily');
+    const ch = me ? me.c : selChar;
+    if (!meta.data.stats.winChars.includes(ch)) meta.data.stats.winChars.push(ch);
+    if (meta.data.stats.winChars.length >= 3) achieve('chars3');
+  }
+  const secs0 = Math.floor((performance.now() - runStart) / 1000);
+  // éclats d'âme : même une défaite rapporte quelque chose
+  let shards = snap.floor + snap.run.bosses * 3 + (win ? 15 : 0) + (runMode === 'daily' ? 5 : 0);
+  if (runMode === 'hard') shards = Math.round(shards * 1.5);
+  meta.data.shards += shards;
+  // score
+  let score = snap.floor * 1000 + snap.run.bosses * 500 + snap.run.kills * 10 + snap.run.secrets * 300 + (me ? me.coins * 5 : 0) + (win ? 5000 + Math.max(0, 3000 - secs0 * 2) : 0);
+  if (runMode === 'hard') score = Math.round(score * 1.5);
+  meta.data.stats.bestScore = Math.max(meta.data.stats.bestScore, score);
   meta.save();
+  $('#end-gains').innerHTML = `<span class="chip">◆ +${shards} éclats d’âme</span><span class="chip">Score : ${score.toLocaleString('fr-FR')}</span><span class="chip" id="end-rank">Envoi au classement...</span>`
+    + runAch.map((a) => `<span class="chip ach">🏆 ${a.name}${a.item ? ' → ' + ITEMS[a.item].glyph : ''}</span>`).join('');
+  meta.api('/api/score', { method: 'POST', body: { mode: runMode, score, floor: snap.floor, time: secs0, won: win, char: me ? me.c : selChar, name: meta.data.name } })
+    .then((r) => { const el = $('#end-rank'); if (el) el.textContent = r.rank ? `Classement : ${r.rank}ᵉ` : 'Score enregistré'; })
+    .catch(() => { const el = $('#end-rank'); if (el) el.textContent = 'Classement hors ligne'; });
   audio.play(win ? 'win' : 'lose');
   $('#end-title').textContent = win ? '✨ Victoire ! ✨' : 'La run est terminée';
   $('#end-title').style.color = win ? 'var(--gold)' : 'var(--danger)';
@@ -310,6 +425,8 @@ function endRun(snap, meId) {
     <span>Monstres vaincus <b>${snap.run.kills}</b></span>
     <span>Boss vaincus <b>${snap.run.bosses}</b></span>
     <span>Salles explorées <b>${snap.run.rooms}</b></span>
+    <span>Salles secrètes <b>${snap.run.secrets}</b></span>
+    <span>Mode <b>${runMode === 'daily' ? 'Défi du jour' : runMode === 'hard' ? 'Difficile' : 'Normal'}</b></span>
     <span>Graine <b>${snap.seed}</b></span>
     <div style="grid-column:1/-1" class="inv">${items}</div>`;
   const host = mode === 'multi' && lobby && lobby.host === net.id;
@@ -322,35 +439,100 @@ function endRun(snap, meId) {
 function quitToMenu() {
   audio.music(null); musicBiome = null;
   if (mode === 'multi' && net) { net.leave(); lobby = null; }
-  mode = null; game = null; inGame = false; paused = false; ended = false;
+  mode = null; game = null; inGame = false; paused = false; ended = false; settingsOpen = false;
   renderTitle();
   show('#screen-title');
 }
 
-function togglePause() {
-  if (!inGame || ended) return;
-  paused = !paused;
-  if (paused) {
-    const snap = lastSnap;
-    const me = snap && snap.players.find((p) => p.id === (mode === 'multi' ? net.id : 'local'));
-    $('#pause-title').textContent = mode === 'multi' ? 'Menu (la partie continue !)' : 'Pause';
-    $('#pause-items').innerHTML = me && me.items.length
-      ? me.items.map((id) => `<span title="${ITEMS[id].name} : ${ITEMS[id].desc}">${ITEMS[id].glyph}</span>`).join('')
-      : '<small class="hint">Aucun objet pour l’instant</small>';
-    $('#btn-quit').textContent = mode === 'multi' ? 'Quitter la partie' : 'Abandonner la run';
-    show('#screen-pause');
-  } else show(null);
+// ---------------------------------------------------------- paramètres
+let settingsOpen = false;
+function renderKeys() {
+  const tb = $('#keys-table');
+  tb.innerHTML = '';
+  let group = '';
+  for (const a of ACTIONS) {
+    if (a.group !== group) { group = a.group; const tr = document.createElement('tr'); tr.innerHTML = `<th colspan="2">${group}</th>`; tb.appendChild(tr); }
+    const tr = document.createElement('tr');
+    const td = document.createElement('td'); td.textContent = a.label;
+    const td2 = document.createElement('td');
+    const b = document.createElement('button');
+    b.className = 'keybtn';
+    b.textContent = keyLabel(input.bind[a.id]);
+    b.onclick = () => {
+      b.textContent = '...';
+      b.classList.add('wait');
+      input.capture = (code) => {
+        if (code) {
+          // une touche ne peut servir qu'à une action : on échange si besoin
+          const other = Object.keys(input.bind).find((k) => input.bind[k] === code && k !== a.id);
+          if (other) input.bind[other] = input.bind[a.id];
+          input.bind[a.id] = code;
+          meta.data.settings.keys = { ...input.bind };
+          meta.save();
+          refreshKeyNames();
+        }
+        renderKeys();
+      };
+    };
+    td2.appendChild(b);
+    tr.append(td, td2);
+    tb.appendChild(tr);
+  }
+}
+function openSettings() {
+  settingsOpen = true;
+  if (inGame && mode === 'solo' && !ended) paused = true;
+  const st = meta.data.settings;
+  $('#vol-sfx').value = Math.round(st.sfx * 100);
+  $('#vol-music').value = Math.round(st.music * 100);
+  $('#opt-shake').checked = st.shake !== false;
+  renderKeys();
+  const snap = lastSnap;
+  const me = inGame && snap && snap.players.find((p) => p.id === (mode === 'multi' ? net.id : 'local'));
+  $('#set-run').classList.toggle('hidden', !inGame || ended);
+  $('#btn-quit').classList.toggle('hidden', !inGame || ended);
+  $('#pause-items').innerHTML = me && me.items.length
+    ? me.items.map((id) => `<span title="${ITEMS[id].name} : ${ITEMS[id].desc}">${ITEMS[id].glyph}</span>`).join('')
+    : '<small class="hint">Aucun objet pour l’instant</small>';
+  $('#settings-note').textContent = inGame && mode === 'multi' ? 'Attention : en multi, la partie continue pendant que tu es dans ce menu.' : '';
+  $('#btn-quit').textContent = mode === 'multi' ? 'Quitter la partie' : 'Abandonner la run';
+  $('#btn-quit').dataset.confirm = '';
+  show('#modal-settings');
+}
+function closeSettings() {
+  settingsOpen = false;
+  input.capture = null;
+  if (inGame) { paused = false; show(ended ? '#screen-end' : null); }
+  else show(currentScreen);
+}
+function togglePause() { if (settingsOpen) closeSettings(); else openSettings(); }
+
+// ---------------------------------------------------------- bouton paramètres : coin haut-gauche du jeu
+const gear = $('#btn-settings');
+function placeGear() {
+  if (inGame) {
+    const r = canvas.getBoundingClientRect();
+    const sz = Math.round(r.width * 0.042);
+    gear.style.left = Math.round(r.left + r.width * 0.008) + 'px';
+    gear.style.top = Math.round(r.top + r.height * 0.016) + 'px';
+    gear.style.width = gear.style.height = sz + 'px';
+    gear.style.fontSize = Math.round(sz * 0.6) + 'px';
+  } else { gear.style.left = gear.style.top = '12px'; gear.style.width = gear.style.height = '44px'; gear.style.fontSize = '24px'; }
 }
 
 // ---------------------------------------------------------- boucle
 function frame(now) {
+  placeGear();
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   if (inGame && mode === 'solo' && game) {
     const meSnap = lastSnap && lastSnap.players[0];
+    renderer.showMap = !paused && input.mapHeld();
     if (!paused) {
       game.setInput('local', input.get(meSnap));
       if (input.consumeSpell()) game.requestSpell('local');
+      if (input.consume('bomb')) game.requestBomb('local');
+      if (input.consume('ping')) game.requestPing('local');
       acc += dt;
       while (acc >= DT) { game.step(DT); acc -= DT; }
     } else input.consumeSpell();
@@ -365,10 +547,15 @@ function frame(now) {
     const inp = paused ? { mx: 0, my: 0, sx: 0, sy: 0 } : input.get(me);
     net.sendInput(inp);
     if (input.consumeSpell() && !paused) net.spell();
-    const v = net.view();
+    if (input.consume('bomb') && !paused) net.bomb();
+    if (input.consume('ping') && !paused) net.mark();
+    renderer.showMap = !paused && input.mapHeld();
+    let v = net.view();
     if (v) {
+      const pred = predictor.update(latest, net.id, inp, dt);
+      if (pred) v = { ...v, players: v.players.map((p) => (p.id === net.id ? { ...p, x: pred.x, y: pred.y, vx: pred.vx, vy: pred.vy } : p)) };
       lastSnap = v;
-      renderer.draw(v, net.id, dt);
+      renderer.draw(v, net.id, dt, { ping: net.rtt != null ? Math.round(net.rtt) : null });
       if (latest.state !== 'playing' && !ended) endRun(latest, net.id);
     }
   }
@@ -377,7 +564,36 @@ function frame(now) {
 
 // ---------------------------------------------------------- boutons
 $('#name').value = meta.data.name || '';
-$('#btn-solo').onclick = startSolo;
+$('#btn-solo').onclick = () => startSolo(false);
+$('#btn-daily').onclick = () => {
+  const d = meta.data.daily;
+  if (d.day === todayKey() && d.done && $('#btn-daily').dataset.confirm !== '1') {
+    $('#btn-daily').dataset.confirm = '1';
+    $('#title-msg').style.color = 'var(--gold)';
+    $('#title-msg').textContent = 'Tu as déjà joué le défi aujourd’hui : rejouer ne comptera que pour le plaisir. Clique encore pour lancer.';
+    return;
+  }
+  $('#btn-daily').dataset.confirm = '';
+  $('#title-msg').textContent = '';
+  startSolo(true);
+};
+document.querySelectorAll('#diff .seg').forEach((b) => (b.onclick = () => {
+  if (b.dataset.diff === 'hard' && meta.data.wins < 1) { $('#title-msg').textContent = 'Termine une run pour débloquer le mode difficile.'; return; }
+  difficulty = b.dataset.diff; meta.data.difficulty = difficulty; meta.save(); renderTitle();
+}));
+document.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => {
+  const id = b.dataset.open;
+  if (id === '#screen-talents') renderTalents();
+  if (id === '#screen-codex') renderCodex();
+  if (id === '#screen-leaderboard') renderLeaderboard();
+  show(id);
+}));
+$('#btn-account').onclick = () => { renderAccount(); show('#modal-account'); };
+wireAccount(() => renderTitle());
+document.querySelectorAll('#codex-tabs .seg').forEach((b) => (b.onclick = () => renderCodex(b.dataset.tab)));
+document.querySelectorAll('#lb-tabs .seg').forEach((b) => (b.onclick = () => renderLeaderboard(b.dataset.mode)));
+$('#btn-talent-reset').onclick = () => { const r = meta.resetTalents(); renderTalents(); $('#talent-shards').textContent = meta.data.shards + (r ? ` (+${r} remboursés)` : ''); };
+$('#btn-intro').onclick = () => { settingsOpen = false; playIntro(() => show(inGame ? null : '#screen-title'), show); };
 $('#btn-create').onclick = createLobby;
 $('#btn-join').onclick = () => joinLobby($('#join-code').value.trim().toUpperCase());
 $('#join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-join').click(); });
@@ -387,14 +603,25 @@ $('#btn-copy').onclick = () => {
   const url = `${location.origin}/?code=${lobby.code}`;
   navigator.clipboard?.writeText(url).then(() => ($('#lobby-msg').textContent = 'Lien copié : ' + url), () => ($('#lobby-msg').textContent = url));
 };
-$('#btn-resume').onclick = togglePause;
-$('#btn-quit').onclick = quitToMenu;
+$('#btn-resume').onclick = closeSettings;
+$('#btn-settings').onclick = () => { audio.unlock(); togglePause(); };
+$('#vol-sfx').oninput = (e) => { meta.data.settings.sfx = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
+$('#vol-sfx').onchange = () => audio.play('coin');
+$('#vol-music').oninput = (e) => { meta.data.settings.music = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
+$('#opt-shake').onchange = (e) => { meta.data.settings.shake = e.target.checked; renderer.shakeOn = e.target.checked; meta.save(); };
+$('#btn-keys-reset').onclick = () => { input.setBindings(DEFAULT_KEYS); meta.data.settings.keys = {}; meta.save(); refreshKeyNames(); renderKeys(); };
+$('#btn-fullscreen').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); };
+$('#btn-quit').onclick = () => {
+  const b = $('#btn-quit');
+  if (b.dataset.confirm !== '1') { b.dataset.confirm = '1'; b.textContent = 'Sûr ? Cliquer encore'; return; }
+  settingsOpen = false; quitToMenu();
+};
 $('#btn-again').onclick = () => {
   if (mode === 'multi') net.backToLobby();
   else { renderTitle(); startSolo(); }
 };
 $('#btn-menu').onclick = quitToMenu;
-$('#btn-help').onclick = () => show('#modal-help');
+$('#btn-help').onclick = () => openSettings();
 $('#btn-save').onclick = () => { $('#save-out').value = meta.exportCode(); $('#save-msg').textContent = ''; show('#modal-save'); };
 $('#btn-import').onclick = () => {
   try { meta.importCode($('#save-in').value); $('#save-msg').style.color = '#9af0b0'; $('#save-msg').textContent = 'Sauvegarde importée !'; renderTitle(); }
@@ -406,11 +633,9 @@ $('#btn-reset').onclick = () => {
   meta.data = { ...meta.load() };
   location.reload();
 };
-$('#btn-mute').onclick = () => { audio.unlock(); audio.setMuted(!audio.muted); meta.data.muted = audio.muted; meta.save(); renderTitle(); };
-$('#btn-music').onclick = () => { audio.unlock(); audio.setMusicMuted(!audio.musicMuted); meta.data.musicMuted = audio.musicMuted; meta.save(); renderTitle(); };
-document.querySelectorAll('.close').forEach((b) => (b.onclick = () => show('#screen-title')));
+document.querySelectorAll('.close').forEach((b) => (b.onclick = () => { renderTitle(); show('#screen-title'); }));
 addEventListener('keydown', (e) => {
-  if (e.code === 'Escape') togglePause();
+  if (e.code === 'Escape' && !input.capture && (inGame || settingsOpen)) togglePause();
   if (e.code === 'KeyM' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { audio.setMuted(!audio.muted); meta.data.muted = audio.muted; meta.save(); }
   if (e.code === 'KeyN' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { audio.setMusicMuted(!audio.musicMuted); meta.data.musicMuted = audio.musicMuted; meta.save(); }
 });
@@ -421,9 +646,28 @@ const qc = new URLSearchParams(location.search).get('code');
 if (qc) $('#join-code').value = qc.toUpperCase();
 
 renderTitle();
-show('#screen-title');
-document.fonts?.load('16px "Pixelify Sans"').then(() => renderer.bgKey = '');
 requestAnimationFrame(frame);
+
+// ---------------------------------------------------------- écran de chargement puis introduction
+(async () => {
+  const bar = $('#load-bar'), txt = $('#load-text');
+  const step = (w, t) => { bar.style.width = w; txt.textContent = t; };
+  step('25%', 'Ouverture des grimoires...');
+  await Promise.race([document.fonts?.load('16px "Pixelify Sans"'), new Promise((r) => setTimeout(r, 2500))]);
+  renderer.bgKey = '';
+  step('60%', 'Allumage des torches...');
+  await Promise.race([meta.syncFromCloud(), new Promise((r) => setTimeout(r, 2500))]);
+  renderTitle();
+  step('100%', 'Le donjon vous attend !');
+  await new Promise((r) => setTimeout(r, 350));
+  $('#loading').classList.add('done');
+  if (!meta.data.introSeen && !qc) {
+    playIntro(() => { meta.data.introSeen = true; meta.save(); show('#screen-title'); }, show);
+  } else show('#screen-title');
+})();
+// reconnexion automatique à une partie multi après un rechargement de la page
+try { if (sessionStorage.getItem('hexlings.session')) ensureNet(); } catch { /* ignore */ }
+meta.onChange = () => { if (!inGame) $('#nav-shards').textContent = `◆ ${meta.data.shards}`; };
 
 // accès console pour tester : window.hex
 window.hex = { get game() { return game; }, meta };

@@ -12,7 +12,7 @@ export const BIOMES = {
     wallStyle: 'brick', rockStyle: 'stone', pitStyle: 'hole', deco: 'castle', ambient: 'dust', torches: true,
     enemies: ['slime', 'bat', 'archer', 'imp', 'shroom'], bosses: ['kingslime', 'batqueen'],
     obstacles: { poop: 2, fire: 1, pot: 3 },
-    music: { root: 50, scale: 'minor', tempo: 92, lead: 'triangle' },
+    music: { theme: 'march', root: 50, scale: 'minor', tempo: 92, lead: 'triangle' },
   },
   forest: {
     name: 'Forêt Enchantée',
@@ -22,7 +22,7 @@ export const BIOMES = {
     enemies: ['flytrap', 'pixie', 'slime', 'shroom', 'wolf'], bosses: ['mothervine', 'eldershroom'],
     obstacles: { poop: 3, fire: 1, pot: 1 },
     tints: { slime: 'leaf' },
-    music: { root: 55, scale: 'dorian', tempo: 100, lead: 'sine' },
+    music: { theme: 'flowing', root: 55, scale: 'dorian', tempo: 100, lead: 'sine' },
   },
   graveyard: {
     name: 'Cimetière des Brumes',
@@ -31,7 +31,7 @@ export const BIOMES = {
     wallStyle: 'fence', rockStyle: 'tomb', pitStyle: 'grave', deco: 'graveyard', ambient: 'fog',
     enemies: ['ghost', 'zombie', 'archer', 'bat'], bosses: ['gravedigger', 'warden'],
     obstacles: { poop: 2, fire: 2, pot: 2 },
-    music: { root: 48, scale: 'phrygian', tempo: 80, lead: 'sine' },
+    music: { theme: 'dirge', root: 48, scale: 'phrygian', tempo: 80, lead: 'sine' },
   },
   caves: {
     name: 'Grottes de Cristal',
@@ -41,7 +41,7 @@ export const BIOMES = {
     enemies: ['golem', 'bat', 'slime', 'imp', 'shroom'], bosses: ['runegolem', 'shadowweaver'],
     obstacles: { poop: 2, fire: 1, pot: 2 },
     tints: { slime: 'crystal' },
-    music: { root: 52, scale: 'minor', tempo: 88, lead: 'sine' },
+    music: { theme: 'drip', root: 52, scale: 'minor', tempo: 88, lead: 'sine' },
   },
   crypt: {
     name: 'Sanctuaire de la Liche',
@@ -50,7 +50,7 @@ export const BIOMES = {
     wallStyle: 'brick', rockStyle: 'tomb', pitStyle: 'hole', deco: 'crypt', ambient: 'fog', torches: true,
     enemies: ['ghost', 'archer', 'zombie', 'cultist'], bosses: ['lich'],
     obstacles: { poop: 1, fire: 2, pot: 3 },
-    music: { root: 45, scale: 'phrygian', tempo: 84, lead: 'triangle' },
+    music: { theme: 'dirge', root: 45, scale: 'phrygian', tempo: 84, lead: 'triangle' },
   },
   library: {
     name: 'Bibliothèque Interdite',
@@ -59,7 +59,7 @@ export const BIOMES = {
     wallStyle: 'shelves', rockStyle: 'crate', pitStyle: 'hole', deco: 'library', ambient: 'pages', torches: true,
     enemies: ['book', 'cultist', 'eye', 'ghost', 'pixie'], bosses: ['grimoire', 'shadowweaver+'],
     obstacles: { poop: 1, fire: 2, pot: 3 },
-    music: { root: 53, scale: 'harmonic', tempo: 96, lead: 'triangle' },
+    music: { theme: 'mystery', root: 53, scale: 'harmonic', tempo: 96, lead: 'triangle' },
   },
   volcano: {
     name: 'Forge Volcanique',
@@ -69,7 +69,7 @@ export const BIOMES = {
     enemies: ['imp', 'golem', 'slime', 'cultist', 'eye'], bosses: ['salamander', 'runegolem+'],
     obstacles: { poop: 1, fire: 3, pot: 1 },
     tints: { slime: 'magma', golem: 'magma' },
-    music: { root: 47, scale: 'harmonic', tempo: 112, lead: 'sawtooth' },
+    music: { theme: 'driving', root: 47, scale: 'harmonic', tempo: 112, lead: 'sawtooth' },
   },
   abyss: {
     name: 'Abîme Astral',
@@ -78,7 +78,7 @@ export const BIOMES = {
     wallStyle: 'void', rockStyle: 'asteroid', pitStyle: 'void', deco: 'abyss', ambient: 'stars',
     enemies: ['eye', 'cultist', 'ghost', 'book', 'imp'], bosses: ['shadowweaver+', 'warden+'],
     obstacles: { poop: 1, fire: 2, pot: 1 },
-    music: { root: 49, scale: 'whole', tempo: 86, lead: 'sine' },
+    music: { theme: 'floating', root: 49, scale: 'whole', tempo: 86, lead: 'sine' },
   },
   frost: {
     name: 'Palais de Givre',
@@ -88,7 +88,7 @@ export const BIOMES = {
     enemies: ['golem', 'bat', 'ghost', 'archer', 'pixie', 'slime'], bosses: ['frostqueen', 'batqueen+'],
     obstacles: { poop: 1, fire: 1, pot: 2 },
     tints: { slime: 'ice', golem: 'ice', bat: 'ice' },
-    music: { root: 57, scale: 'minor', tempo: 90, lead: 'sine' },
+    music: { theme: 'twinkly', root: 57, scale: 'minor', tempo: 90, lead: 'sine' },
   },
   tower: {
     name: 'Tour de l’Archimage',
@@ -97,7 +97,7 @@ export const BIOMES = {
     wallStyle: 'rune', rockStyle: 'pillar', pitStyle: 'void', deco: 'tower', ambient: 'runes', torches: true,
     enemies: ['eye', 'cultist', 'book', 'golem', 'ghost', 'imp', 'pixie'], bosses: ['archmage'],
     obstacles: { poop: 1, fire: 2, pot: 2 },
-    music: { root: 46, scale: 'harmonic', tempo: 104, lead: 'sawtooth' },
+    music: { theme: 'epic', root: 46, scale: 'harmonic', tempo: 104, lead: 'sawtooth' },
   },
 };
 
