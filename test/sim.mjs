@@ -17,7 +17,7 @@ function run(nPlayers, seed, verbose = false) {
       const t = steps / 60;
       g.setInput(p.id, { mx: Math.sin(t + p.idx), my: Math.cos(t * 1.3 + p.idx), sx: Math.cos(t * 2), sy: Math.sin(t * 2) });
       if (steps % 400 === 0) g.requestSpell(p.id);
-      p.hp = p.maxHp; // invincible-ish pour tester la progression
+      p.hp = p.maxHp; if (g.players.length === 1) p.iframes = 0.2; // quasi invincible pour tester la progression
       if (p.dead && steps % 600 === 0) { p.dead = false; p.hp = 2; }
     }
     g.step(DT);

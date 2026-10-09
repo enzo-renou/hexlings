@@ -56,6 +56,7 @@ export class Net {
     while (i > 0 && b[i - 1].t > rt) i--;
     if (i === 0) return b[0];
     const a = b[i - 1], c = b[i];
+    if (c.roomVer !== last.roomVer || c.floor !== last.floor) return last; // changement de salle : on saute directement
     if (a.roomVer !== c.roomVer || a.floor !== c.floor) return c;
     const k = Math.max(0, Math.min(1, (rt - a.t) / Math.max(1e-6, c.t - a.t)));
     return lerpSnap(a, c, k);

@@ -7,6 +7,16 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 
 - **Salles façon Isaac** : chaque salle contient des monstres et des obstacles (rochers, fosses). Les portes se ferment tant que la salle n'est pas nettoyée.
 - **Étages générés** : une carte de salles différente à chaque fois, avec une **salle au trésor ★**, une **boutique $** et la **salle du boss ☠** au bout du chemin.
+- **Biomes** (comme les chapitres d'Isaac) : tous les 2 étages, un biome tiré entre deux, chacun avec ses monstres, ses boss, ses obstacles, son ambiance et sa musique :
+  - Étages 1-2 : **Château Hanté** (gluants, squelettes, chauves-souris) ou **Forêt Enchantée** (plantes carnivores, fées, loups — boss : la Mère Carnivore)
+  - Étages 3-4 : **Cimetière des Brumes** (fantômes, zombies — boss : le Fossoyeur) ou **Grottes de Cristal** (golems, araignée)
+  - Étage 5 : **Sanctuaire de la Liche**
+  - Étages 6-7 : **Bibliothèque Interdite** (grimoires volants — boss : le Grand Grimoire) ou **Forge Volcanique** (lave — boss : la Salamandre de Lave)
+  - Étages 8-9 : **Abîme Astral** ou **Palais de Givre** (boss : la Reine de Givre)
+  - Étage 10 : **Tour de l'Archimage**
+- **Obstacles destructibles** : crottes (dont la rare crotte dorée), vases et feux. On les casse en tirant dessus pour trouver des pièces ou des cœurs. Attention, les feux brûlent au contact !
+- **Effets** : glissement de caméra entre les salles, portes qui claquent et s'ouvrent, chute dans la trappe et ouverture en iris à chaque étage, éclairage dynamique (torches, feux, sorts), traînées et éclats de tirs, animations des monstres (apparition, écrasement, mort, taches au sol), ambiance par biome (feuilles, lucioles, brume, braises, neige...).
+- **Sons et musique** générés en direct : chaque sorcier a son bruit de tir, et la musique change selon le biome et s'intensifie en combat et contre les boss.
 - **Multijoueur** : jusqu'à 4 sorciers dans la même salle. **Tout le monde doit se tenir sur la même porte** pour passer à la salle suivante (et dans la trappe pour descendre). Un joueur tombé devient un fantôme et revient à l'étage suivant.
 - **10 étages** : un boss à chaque fin d'étage, un **gros boss à l'étage 5** (la Liche Gardienne) et un **boss final à l'étage 10** (Vorthan, l'Archimage Déchu).
 - **36 objets** : bonus de stats, malus, et nouvelles façons d'attaquer (tête chercheuse, triple tir, tirs explosifs, rebonds, foudre en chaîne, poison, gel, orbes protectrices...).
@@ -23,7 +33,7 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 | Flèches ou clic gauche maintenu | Lancer des sorts |
 | Espace ou clic droit | Sort spécial |
 | Échap | Pause |
-| M | Couper le son |
+| M / N | Couper le son / la musique |
 | Manette | Stick gauche / stick droit / A |
 
 ## Lancer en local
@@ -70,17 +80,19 @@ server.js            Serveur Express + Socket.io (salons de 4, simulation 60 foi
 shared/              Code commun navigateur + serveur
   constants.js       Tailles, thèmes des étages
   data.js            ⭐ Sorciers, objets, sorts, reliques, monstres, boss — c'est ici qu'on équilibre
+  biomes.js          ⭐ Biomes : couleurs, monstres, boss, obstacles, musique
   floorgen.js        Génération des étages et des salles
   game.js            La simulation (déplacements, tirs, IA, boss, objets, portes)
   rng.js             Aléatoire à graine (une graine = une run reproductible)
 public/
   index.html, style.css
   js/main.js         Menus, boucle de jeu, solo / multi
-  js/render.js       Tout le dessin (sorciers, monstres, salles, interface)
+  js/render.js       Rendu des salles, animations, éclairage, interface
+  js/sprites.js      Dessin des sorciers, monstres et obstacles
   js/net.js          Connexion multi + interpolation
   js/meta.js         Progression sauvegardée
   js/input.js        Clavier, souris, manette
-  js/audio.js        Sons synthétisés
+  js/audio.js        Sons synthétisés + musique procédurale
 test/                Simulations automatiques
 ```
 

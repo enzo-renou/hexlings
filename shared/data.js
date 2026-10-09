@@ -123,23 +123,29 @@ export const RELIC_MAX_LEVEL = 3;
 
 // ---------- Monstres ----------
 export const ENEMIES = {
-  slime:    { name: 'Gluant', hp: 9, r: 14, speed: 55, ai: 'chase', minFloor: 1, weight: 3, split: 'slimelet', splitN: 2 },
-  slimelet: { name: 'Gluantin', hp: 3, r: 9, speed: 85, ai: 'chase', minFloor: 99 },
-  bat:      { name: 'Chauve-souris', hp: 5, r: 11, speed: 105, ai: 'erratic', fly: true, minFloor: 1, weight: 3 },
-  shroom:   { name: 'Champispore', hp: 11, r: 15, speed: 0, ai: 'turret', fire: 2.4, shotSpd: 150, minFloor: 1, weight: 2 },
-  imp:      { name: 'Diablotin', hp: 9, r: 12, speed: 55, ai: 'dasher', minFloor: 2, weight: 2 },
-  archer:   { name: 'Squelette Archer', hp: 10, r: 13, speed: 70, ai: 'kite', fire: 1.9, shotSpd: 220, minFloor: 2, weight: 2 },
-  golem:    { name: 'Golem de Pierre', hp: 28, r: 19, speed: 38, ai: 'chase', heavy: true, minFloor: 3, weight: 1 },
-  ghost:    { name: 'Spectre', hp: 13, r: 13, speed: 66, ai: 'chase', fly: true, phase: true, minFloor: 4, weight: 2 },
-  eye:      { name: 'Œil Arcanique', hp: 15, r: 14, speed: 45, ai: 'floater', fly: true, fire: 2.2, shotSpd: 200, minFloor: 5, weight: 2 },
-  cultist:  { name: 'Cultiste', hp: 16, r: 13, speed: 60, ai: 'caster', fire: 2.6, shotSpd: 170, minFloor: 6, weight: 2 },
+  slime:    { name: 'Gluant', hp: 9, r: 14, speed: 55, ai: 'chase', weight: 3, split: 'slimelet', splitN: 2, splat: '#6fcf4a' },
+  slimelet: { name: 'Gluantin', hp: 3, r: 9, speed: 85, ai: 'chase', weight: 0, splat: '#8be06a' },
+  bat:      { name: 'Chauve-souris', hp: 5, r: 11, speed: 105, ai: 'erratic', fly: true, weight: 3, splat: '#5a2a3a' },
+  shroom:   { name: 'Champispore', hp: 11, r: 15, speed: 0, ai: 'turret', fire: 2.4, shotSpd: 150, weight: 2, shot: 'spore', splat: '#b04a3a' },
+  imp:      { name: 'Diablotin', hp: 9, r: 12, speed: 55, ai: 'dasher', weight: 2, splat: '#7a1a10' },
+  archer:   { name: 'Squelette Archer', hp: 10, r: 13, speed: 70, ai: 'kite', fire: 1.9, shotSpd: 220, weight: 2, shot: 'bone', splat: 'bones' },
+  golem:    { name: 'Golem de Pierre', hp: 28, r: 19, speed: 38, ai: 'chase', heavy: true, weight: 1, splat: 'rubble' },
+  ghost:    { name: 'Spectre', hp: 13, r: 13, speed: 66, ai: 'chase', fly: true, phase: true, weight: 2, splat: 'ecto' },
+  eye:      { name: 'Œil Arcanique', hp: 15, r: 14, speed: 45, ai: 'floater', fly: true, fire: 2.2, shotSpd: 200, pattern: 'spread3', weight: 2, splat: '#8a3aff' },
+  cultist:  { name: 'Cultiste', hp: 16, r: 13, speed: 60, ai: 'caster', fire: 2.6, shotSpd: 170, weight: 2, splat: '#5a1a3a' },
+  // --- nouveaux monstres de biome
+  flytrap:  { name: 'Plante Carnivore', hp: 14, r: 16, speed: 0, ai: 'plant', fire: 2.6, shotSpd: 190, weight: 3, shot: 'seed', splat: '#3a8a2a' },
+  pixie:    { name: 'Fée Farceuse', hp: 6, r: 9, speed: 120, ai: 'pixie', fly: true, fire: 2.0, shotSpd: 170, weight: 2, shot: 'pixie', splat: 'sparkle' },
+  wolf:     { name: 'Loup Sylvestre', hp: 11, r: 13, speed: 70, ai: 'dasher', weight: 2, splat: '#6a1a10' },
+  zombie:   { name: 'Zombie', hp: 18, r: 14, speed: 36, ai: 'zombie', weight: 3, splat: '#4a6a2a' },
+  book:     { name: 'Grimoire Volant', hp: 10, r: 12, speed: 70, ai: 'floater', fly: true, fire: 2.4, shotSpd: 180, pattern: 'ring4', weight: 3, shot: 'page', splat: 'pages' },
 };
 
 // ---------- Boss ----------
 // attacks : liste d'attaques tirées au hasard. phases : à X% de vie le boss s'énerve.
 export const BOSSES = {
   kingslime: {
-    name: 'Roi Gluant', look: 'slime', hp: 110, r: 38, move: 'chase', speed: 45, cd: [1.0, 1.8],
+    shot: 'slime', name: 'Roi Gluant', look: 'slime', hp: 110, r: 38, move: 'chase', speed: 45, cd: [1.0, 1.8],
     attacks: [
       { k: 'jump', n: 12, spd: 170 },
       { k: 'summon', type: 'slimelet', n: 3 },
@@ -148,7 +154,7 @@ export const BOSSES = {
     phases: [{ at: 0.5, cdMul: 0.7, spdMul: 1.3, add: [{ k: 'burst', n: 18, spd: [120, 220] }] }],
   },
   batqueen: {
-    name: 'Reine des Chauves-souris', look: 'bat', hp: 100, r: 32, fly: true, move: 'float', speed: 80, cd: [0.9, 1.6],
+    shot: 'e', name: 'Reine des Chauves-souris', look: 'bat', hp: 100, r: 32, fly: true, move: 'float', speed: 80, cd: [0.9, 1.6],
     attacks: [
       { k: 'spiral', arms: 2, spd: 170, dur: 1.6, rot: 0.3 },
       { k: 'summon', type: 'bat', n: 2 },
@@ -157,7 +163,7 @@ export const BOSSES = {
     phases: [{ at: 0.5, cdMul: 0.7, spdMul: 1.3, add: [{ k: 'ring', n: 14, spd: 170 }] }],
   },
   eldershroom: {
-    name: 'Champignon Ancien', look: 'shroom', hp: 130, r: 38, move: 'still', speed: 0, cd: [0.8, 1.4],
+    shot: 'spore', name: 'Champignon Ancien', look: 'shroom', hp: 130, r: 38, move: 'still', speed: 0, cd: [0.8, 1.4],
     attacks: [
       { k: 'ring', n: 14, spd: 150, reps: 3, int: 0.45, offset: true },
       { k: 'burst', n: 16, spd: [100, 200] },
@@ -167,7 +173,7 @@ export const BOSSES = {
     phases: [{ at: 0.5, cdMul: 0.7, add: [{ k: 'spiral', arms: 4, spd: 150, dur: 1.8, rot: 0.18 }] }],
   },
   runegolem: {
-    name: 'Golem Runique', look: 'golem', hp: 150, r: 38, move: 'chase', speed: 40, cd: [1.0, 1.7],
+    shot: 'e', name: 'Golem Runique', look: 'golem', hp: 150, r: 38, move: 'chase', speed: 40, cd: [1.0, 1.7],
     attacks: [
       { k: 'charge', spd: 420, n: 10 },
       { k: 'ring', n: 8, spd: 180, reps: 2, int: 0.35, offset: true },
@@ -176,7 +182,7 @@ export const BOSSES = {
     phases: [{ at: 0.5, cdMul: 0.7, spdMul: 1.25, add: [{ k: 'cross', dirs: 4, len: 6, spd: 130 }] }],
   },
   lich: {
-    name: 'Liche Gardienne', look: 'lich', hp: 420, r: 34, fly: true, move: 'float', speed: 65, cd: [0.8, 1.4], big: true,
+    shot: 'e2', name: 'Liche Gardienne', look: 'lich', hp: 420, r: 34, fly: true, move: 'float', speed: 65, cd: [0.8, 1.4], big: true,
     attacks: [
       { k: 'spiral', arms: 3, spd: 170, dur: 2.0, rot: 0.22 },
       { k: 'teleport', n: 5, spd: 220 },
@@ -189,7 +195,7 @@ export const BOSSES = {
     ],
   },
   shadowweaver: {
-    name: 'Tisseuse d’Ombre', look: 'spider', hp: 300, r: 36, move: 'wander', speed: 95, cd: [0.8, 1.4],
+    shot: 'e2', name: 'Tisseuse d’Ombre', look: 'spider', hp: 300, r: 36, move: 'wander', speed: 95, cd: [0.8, 1.4],
     attacks: [
       { k: 'burst', n: 22, spd: [110, 230] },
       { k: 'summon', type: 'imp', n: 2 },
@@ -199,7 +205,7 @@ export const BOSSES = {
     phases: [{ at: 0.5, cdMul: 0.65, spdMul: 1.3, add: [{ k: 'spiral', arms: 5, spd: 160, dur: 1.6, rot: 0.25 }] }],
   },
   warden: {
-    name: 'Gardien Spectral', look: 'warden', hp: 320, r: 34, fly: true, move: 'float', speed: 70, cd: [0.8, 1.3],
+    shot: 'ice', name: 'Gardien Spectral', look: 'warden', hp: 320, r: 34, fly: true, move: 'float', speed: 70, cd: [0.8, 1.3],
     attacks: [
       { k: 'teleport', n: 7, spd: 230 },
       { k: 'cross', dirs: 8, len: 6, spd: 120 },
@@ -209,7 +215,7 @@ export const BOSSES = {
     phases: [{ at: 0.5, cdMul: 0.65, add: [{ k: 'homing', n: 5, spd: 120 }] }],
   },
   archmage: {
-    name: 'Vorthan, l’Archimage Déchu', look: 'archmage', hp: 1100, r: 34, fly: true, move: 'float', speed: 70, cd: [0.7, 1.2], big: true,
+    shot: 'e2', name: 'Vorthan, l’Archimage Déchu', look: 'archmage', hp: 1100, r: 34, fly: true, move: 'float', speed: 70, cd: [0.7, 1.2], big: true,
     attacks: [
       { k: 'spiral', arms: 3, spd: 180, dur: 2.0, rot: 0.24 },
       { k: 'teleport', n: 7, spd: 240 },
@@ -223,11 +229,56 @@ export const BOSSES = {
       { at: 0.33, cdMul: 0.7, spdMul: 1.25, add: [{ k: 'spiral', arms: 5, spd: 170, dur: 2.2, rot: 0.2 }, { k: 'burst', n: 28, spd: [120, 260] }] },
     ],
   },
+  mothervine: {
+    name: 'Mère Carnivore', look: 'mothervine', hp: 130, r: 40, move: 'still', speed: 0, cd: [0.9, 1.5], shot: 'seed',
+    attacks: [
+      { k: 'cross', dirs: 4, len: 6, spd: 120 },
+      { k: 'burst', n: 18, spd: [110, 210] },
+      { k: 'summon', type: 'flytrap', n: 1 },
+      { k: 'aimed', n: 5, spread: 0.2, spd: 210, reps: 2, int: 0.4 },
+    ],
+    phases: [{ at: 0.5, cdMul: 0.7, add: [{ k: 'spiral', arms: 3, spd: 160, dur: 1.8, rot: 0.25 }] }],
+  },
+  gravedigger: {
+    name: 'Le Fossoyeur', look: 'gravedigger', hp: 140, r: 32, move: 'chase', speed: 50, cd: [1.0, 1.7], shot: 'dirt',
+    attacks: [
+      { k: 'jump', n: 12, spd: 170 },
+      { k: 'summon', type: 'zombie', n: 2 },
+      { k: 'aimed', n: 3, spread: 0.25, spd: 230, reps: 3, int: 0.3 },
+      { k: 'ring', n: 10, spd: 160, reps: 2, int: 0.4, offset: true },
+    ],
+    phases: [{ at: 0.5, cdMul: 0.7, spdMul: 1.3, add: [{ k: 'burst', n: 20, spd: [120, 220] }] }],
+  },
+  grimoire: {
+    name: 'Le Grand Grimoire', look: 'grimoire', hp: 300, r: 34, fly: true, move: 'float', speed: 70, cd: [0.8, 1.3], shot: 'page',
+    attacks: [
+      { k: 'spiral', arms: 4, spd: 160, dur: 1.8, rot: 0.22 },
+      { k: 'summon', type: 'book', n: 2 },
+      { k: 'aimed', n: 5, spread: 0.16, spd: 230, reps: 2, int: 0.4 },
+      { k: 'cross', dirs: 8, len: 5, spd: 120 },
+    ],
+    phases: [{ at: 0.5, cdMul: 0.7, add: [{ k: 'homing', n: 4, spd: 120 }] }],
+  },
+  salamander: {
+    name: 'Salamandre de Lave', look: 'salamander', hp: 300, r: 34, move: 'wander', speed: 115, cd: [0.8, 1.3], shot: 'fire',
+    attacks: [
+      { k: 'charge', spd: 460, n: 12 },
+      { k: 'burst', n: 24, spd: [120, 240] },
+      { k: 'ring', n: 14, spd: 180, reps: 2, int: 0.35, offset: true },
+      { k: 'aimed', n: 3, spread: 0.2, spd: 260, reps: 4, int: 0.22 },
+    ],
+    phases: [{ at: 0.5, cdMul: 0.65, spdMul: 1.3, add: [{ k: 'spiral', arms: 3, spd: 180, dur: 1.6, rot: 0.3 }] }],
+  },
+  frostqueen: {
+    name: 'Reine de Givre', look: 'frostqueen', hp: 320, r: 32, fly: true, move: 'float', speed: 70, cd: [0.8, 1.3], shot: 'ice',
+    attacks: [
+      { k: 'spiral', arms: 4, spd: 150, dur: 2.0, rot: 0.2 },
+      { k: 'homing', n: 4, spd: 115 },
+      { k: 'teleport', n: 7, spd: 230 },
+      { k: 'ring', n: 16, spd: 160, reps: 2, int: 0.5, offset: true },
+    ],
+    phases: [{ at: 0.5, cdMul: 0.7, add: [{ k: 'cross', dirs: 8, len: 6, spd: 120 }, { k: 'summon', type: 'pixie', n: 3 }] }],
+  },
 };
 
-export function bossPoolForFloor(floor) {
-  if (floor === 5) return ['lich'];
-  if (floor === 10) return ['archmage'];
-  if (floor < 5) return ['kingslime', 'batqueen', 'eldershroom', 'runegolem'];
-  return ['shadowweaver', 'warden', 'kingslime+', 'runegolem+', 'batqueen+', 'eldershroom+'];
-}
+

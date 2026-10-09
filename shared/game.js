@@ -4,10 +4,11 @@
 // ============================================================
 import {
   TILE, ROOM_W, ROOM_H, VIEW_W, VIEW_H, FLOORS, DIRS, DIR_NAMES, OPP,
-  T_FLOOR, T_WALL, T_ROCK, T_PIT, T_DOOR, THEMES, themeIndex,
+  T_FLOOR, T_WALL, T_ROCK, T_PIT, T_DOOR, T_POOP, T_FIRE, T_POT, T_GPOOP, isDestructible,
 } from './constants.js';
+import { BIOMES, pickBiomes } from './biomes.js';
 import { RNG, randomSeed } from './rng.js';
-import { CHARACTERS, ITEMS, RELICS, RELIC_MAX_LEVEL, ENEMIES, BOSSES, bossPoolForFloor } from './data.js';
+import { CHARACTERS, ITEMS, RELICS, RELIC_MAX_LEVEL, ENEMIES, BOSSES } from './data.js';
 import { generateFloor } from './floorgen.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -26,6 +27,8 @@ export class Game {
     this.roomVer = 0;
     this.runStats = { kills: 0, rooms: 0, items: 0, bosses: 0 };
     this.seenItems = new Set();
+    this.biomes = pickBiomes(this.rng);
+    this.descendT = 0;
     this.usedBosses = new Set();
     this.totalPlayers = players.length;
     this.players = players.map((info, i) => this.makePlayer(info, i));
@@ -165,7 +168,10 @@ export class Game {
   // ---------------------------------------------------------- étages & salles
   startFloor(n) {
     this.floor = n;
-    this.fl = generateFloor(this.rng, n);
+    this.biomeId = this.biomes[n] || 'tower';
+    this.biome = BIOMES[this.biomeId];
+    this.fl = generateFloor(this.rng, n, this.biome);
+    this.descendT = 0;
     this.enemies = [];
     this.projs = [];
     this.trapdoor = null;
@@ -175,7 +181,7 @@ export class Game {
       if (p.relicLvl('awaken') >= 2 && p.active) p.active.charge = p.active.max;
     }
     this.enterRoom(this.fl.start, null);
-    this.emit({ k: 'floor', n, name: THEMES[themeIndex(n)].name });
+    this.emit({ k: 'floor', n, name: this.biome.name, biome: this.biomeId });
   }
 
   enterRoom(room, fromDir) {
@@ -211,7 +217,7 @@ export class Game {
       if (room.type === 'boss') this.spawnBoss();
       else this.spawnRoomEnemies(room);
     }
-    this.emit({ k: 'room', type: room.type, cleared: room.cleared });
+    this.emit({ k: 'room', type: room.type, cleared: room.cleared, dir: fromDir });
   }
 
   freeTiles(minDistFromPlayers = 0) {
@@ -256,9 +262,7 @@ export class Game {
   }
 
   spawnRoomEnemies(room) {
-    const pool = Object.entries(ENEMIES)
-      .filter(([, d]) => d.minFloor <= this.floor)
-      .map(([id, d]) => ({ id, weight: d.weight || 1 }));
+    const pool = this.biome.enemies.map((id) => ({ id, weight: ENEMIES[id].weight || 1 }));
     const spots = this.rng.shuffle(this.freeTiles(170));
     const n = Math.min(spots.length, this.enemyCountFor());
     // parfois une salle « thème » avec un seul type d'ennemi
@@ -290,8 +294,9 @@ export class Game {
   }
 
   spawnBoss() {
-    const pool = bossPoolForFloor(this.floor).filter((b) => !this.usedBosses.has(b));
-    const id = this.rng.pick(pool.length ? pool : bossPoolForFloor(this.floor));
+    const all = this.biome.bosses;
+    const pool = all.filter((b) => !this.usedBosses.has(b));
+    const id = this.rng.pick(pool.length ? pool : all);
     this.usedBosses.add(id);
     const elite = id.endsWith('+');
     const baseId = id.replace('+', '');
@@ -323,6 +328,7 @@ export class Game {
     if (t === T_FLOOR) return false;
     if (t === T_WALL) return true;
     if (t === T_DOOR) return !(kind === 'player' && this.doorOpen());
+    if (isDestructible(t)) return kind === 'player' || kind === 'walk';
     if (kind === 'ghost') return false; // traverse rochers & fosses
     if (kind === 'fly') return false;   // vole au-dessus
     return true; // rocher ou fosse pour ceux qui marchent
@@ -435,6 +441,16 @@ export class Game {
     this.flowT -= dt;
     if (this.flowT <= 0) { this.flowT = 0.2; this.updateFlow(); }
 
+    if (this.descendT > 0) {
+      this.descendT -= dt;
+      for (const p of this.players) {
+        p.x += (this.trapdoor.x - p.x) * Math.min(1, dt * 8);
+        p.y += (this.trapdoor.y - p.y) * Math.min(1, dt * 8);
+        p.vx = p.vy = 0;
+      }
+      if (this.descendT <= 0) { this.descendT = 0; this.startFloor(this.floor + 1); }
+      return;
+    }
     this.updatePlayers(dt);
     if (this.freezeT <= 0) this.updateEnemies(dt);
     this.updateProjectiles(dt);
@@ -468,6 +484,14 @@ export class Game {
         continue;
       }
       this.collide(p, 'player');
+      // les feux brûlent au contact
+      {
+        const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);
+        for (let ty = pty - 1; ty <= pty + 1; ty++) for (let tx = ptx - 1; tx <= ptx + 1; tx++) {
+          if (this.tile(tx, ty) !== T_FIRE) continue;
+          if (Math.hypot((tx + 0.5) * TILE - p.x, (ty + 0.5) * TILE - p.y) < p.r + 20) this.hurtPlayer(p, 1);
+        }
+      }
       const sl = Math.hypot(sx, sy);
       if (sl > 0.2) { p.fx = sx / sl; p.fy = sy / sl; }
       else if (ml > 0.1) { p.fx = mx / Math.max(ml, 1); p.fy = my / Math.max(ml, 1); }
@@ -522,7 +546,7 @@ export class Game {
         r, dmg: s.dmg, life: s.range / s.shotSpeed, fl: f, hits: [], bounces: 0,
       });
     }
-    this.emit({ k: 'shoot', pid: p.id });
+    this.emit({ k: 'shoot', pid: p.id, a: Math.round(base * 100) / 100 });
   }
 
   useSpell(p) {
@@ -654,7 +678,7 @@ export class Game {
           e.alt = !e.alt;
           const n = this.floor >= 4 ? 8 : 4;
           const off = n === 4 && e.alt ? Math.PI / 4 : 0;
-          for (let k = 0; k < n; k++) this.shootE(e.x, e.y, off + (k * TAU) / n, d.shotSpd);
+          for (let k = 0; k < n; k++) this.shootE(e.x, e.y, off + (k * TAU) / n, d.shotSpd, { c: d.shot || 'e' });
           this.emit({ k: 'eshoot', x: e.x, y: e.y });
         }
         break;
@@ -691,6 +715,36 @@ export class Game {
         }
         break;
       }
+      case 'plant': {
+        // plante carnivore : immobile, mord quand on s'approche, crache des graines de loin
+        e.vx = e.vy = 0;
+        if (e.state === 'bite') {
+          if (e.t <= 0) { e.state = 'idle'; e.windup = false; e.biting = 0.25; e.cd = Math.max(e.cd, 0.8); }
+        } else if (dist < e.r + 46 && e.cd <= 0.6) { e.state = 'bite'; e.t = 0.3; e.windup = true; }
+        else if (e.cd <= 0 && dist > 110) {
+          e.cd = d.fire;
+          for (const o of [-0.18, 0, 0.18]) this.shootE(e.x, e.y - 6, aim + o, d.shotSpd, { c: d.shot });
+          this.emit({ k: 'eshoot', x: e.x, y: e.y });
+        }
+        if (e.biting > 0) {
+          e.biting -= dt;
+          for (const p of this.players) if (!p.dead && Math.hypot(p.x - e.x, p.y - e.y) < e.r + 34) this.hurtPlayer(p, this.enemyDmg());
+        }
+        break;
+      }
+      case 'pixie': {
+        if (e.t <= 0) { e.t = this.rng.range(0.25, 0.6); e.ang = aim + Math.PI / 2 * (this.rng.chance(0.5) ? 1 : -1) + this.rng.range(-0.8, 0.8); if (dist > 220) e.ang = aim; }
+        e.vx = Math.cos(e.ang) * sp; e.vy = Math.sin(e.ang) * sp;
+        if (e.cd <= 0) { e.cd = d.fire; this.shootE(e.x, e.y, aim, d.shotSpd, { c: d.shot }); this.emit({ k: 'eshoot', x: e.x, y: e.y }); }
+        break;
+      }
+      case 'zombie': {
+        const rage = e.hp < e.maxHp * 0.5 ? 1.7 : 1;
+        e.rage = rage > 1;
+        const [ux, uy] = this.pathDir(e, target);
+        e.vx = ux * sp * rage; e.vy = uy * sp * rage;
+        break;
+      }
       case 'floater': {
         const want = dist > 200 ? 1 : dist < 140 ? -1 : 0;
         e.ang += dt * 1.5;
@@ -698,7 +752,8 @@ export class Game {
         e.vy = (dy / dist) * sp * want + Math.sin(e.ang) * 25;
         if (e.cd <= 0) {
           e.cd = d.fire;
-          for (const o of [-0.22, 0, 0.22]) this.shootE(e.x, e.y, aim + o, d.shotSpd, { c: 'e2' });
+          if (d.pattern === 'ring4') { const off = this.rng.range(0, TAU); for (let k = 0; k < 4; k++) this.shootE(e.x, e.y, off + (k * TAU) / 4, d.shotSpd, { c: d.shot || 'e2' }); }
+          else for (const o of [-0.22, 0, 0.22]) this.shootE(e.x, e.y, aim + o, d.shotSpd, { c: d.shot || 'e2' });
           this.emit({ k: 'eshoot', x: e.x, y: e.y });
         }
         break;
@@ -783,7 +838,7 @@ export class Game {
     }
   }
 
-  ring(e, n, spd, off = 0, c = 'e2') {
+  ring(e, n, spd, off = 0, c = e.bdef?.shot || 'e2') {
     for (let i = 0; i < n; i++) this.shootE(e.x, e.y, off + (i * TAU) / n, spd, { c });
   }
 
@@ -807,13 +862,13 @@ export class Game {
         break;
       case 'aimed':
         instant(() => {
-          for (let i = 0; i < a.n; i++) this.shootE(e.x, e.y, aim + (i - (a.n - 1) / 2) * a.spread, a.spd, { c: 'e2' });
+          for (let i = 0; i < a.n; i++) this.shootE(e.x, e.y, aim + (i - (a.n - 1) / 2) * a.spread, a.spd, { c: e.bdef.shot || 'e2' });
           this.emit({ k: 'eshoot', x: e.x, y: e.y });
         });
         break;
       case 'burst':
         instant(() => {
-          for (let i = 0; i < a.n; i++) this.shootE(e.x, e.y, this.rng.range(0, TAU), this.rng.range(a.spd[0], a.spd[1]), { c: 'e2' });
+          for (let i = 0; i < a.n; i++) this.shootE(e.x, e.y, this.rng.range(0, TAU), this.rng.range(a.spd[0], a.spd[1]), { c: e.bdef.shot || 'e2' });
           this.emit({ k: 'eshoot', x: e.x, y: e.y });
         });
         break;
@@ -827,7 +882,7 @@ export class Game {
         instant(() => {
           for (let dI = 0; dI < a.dirs; dI++) {
             const ang = a.ang + (dI * TAU) / a.dirs;
-            for (let j = 0; j < a.len; j++) this.shootE(e.x, e.y, ang, a.spd + j * 32, { c: 'e2' });
+            for (let j = 0; j < a.len; j++) this.shootE(e.x, e.y, ang, a.spd + j * 32, { c: e.bdef.shot || 'e2' });
           }
           this.emit({ k: 'eshoot', x: e.x, y: e.y });
         });
@@ -848,7 +903,7 @@ export class Game {
         a.emitT = (a.emitT || 0) - dt * slow;
         if (a.t < a.dur && a.emitT <= 0) {
           a.emitT = 0.08;
-          for (let i = 0; i < a.arms; i++) this.shootE(e.x, e.y, a.ang + (i * TAU) / a.arms, a.spd, { c: 'e2' });
+          for (let i = 0; i < a.arms; i++) this.shootE(e.x, e.y, a.ang + (i * TAU) / a.arms, a.spd, { c: e.bdef.shot || 'e2' });
           a.ang += a.rot;
         }
         if (a.t >= a.dur + 0.3) finish();
@@ -896,7 +951,7 @@ export class Game {
           e.fade = clamp(1 - (a.t - 0.5) / 0.4, 0, 1);
           if (a.t >= 0.9) {
             e.inv = false; e.fade = 0; a.stage = 2;
-            for (let i = 0; i < a.n; i++) this.shootE(e.x, e.y, aim + (i - (a.n - 1) / 2) * 0.17, a.spd, { c: 'e2' });
+            for (let i = 0; i < a.n; i++) this.shootE(e.x, e.y, aim + (i - (a.n - 1) / 2) * 0.17, a.spd, { c: e.bdef.shot || 'e2' });
             this.emit({ k: 'eshoot', x: e.x, y: e.y });
           }
         } else if (a.t > 1.3) finish();
@@ -957,6 +1012,10 @@ export class Game {
 
   explode(x, y, dmg, pid) {
     this.emit({ k: 'boom', x, y });
+    const tx0 = Math.floor(x / TILE), ty0 = Math.floor(y / TILE);
+    for (let ty = ty0 - 1; ty <= ty0 + 1; ty++) for (let tx = tx0 - 1; tx <= tx0 + 1; tx++) {
+      if (Math.hypot((tx + 0.5) * TILE - x, (ty + 0.5) * TILE - y) < 70) this.hitTile(tx, ty, 99);
+    }
     for (const e of this.enemies) {
       if (e.dead) continue;
       if ((e.x - x) ** 2 + (e.y - y) ** 2 < (60 + e.r) ** 2) this.damageEnemy(e, dmg * 0.8, pid);
@@ -998,13 +1057,18 @@ export class Game {
       let alive = pr.life > 0;
       // murs / rochers
       if (alive) {
-        const t = this.tile(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE));
-        const blocked = t === T_WALL || t === T_DOOR || (t === T_ROCK && !(pr.team === 'p' && pr.fl.spectral));
+        const ptx = Math.floor(pr.x / TILE), pty = Math.floor(pr.y / TILE);
+        const t = this.tile(ptx, pty);
+        let blocked = t === T_WALL || t === T_DOOR || (t === T_ROCK && !(pr.team === 'p' && pr.fl.spectral));
+        if (isDestructible(t)) {
+          if (pr.team === 'p') { blocked = true; this.hitTile(ptx, pty, 1); }
+          else blocked = t !== T_FIRE;
+        }
         if (blocked) {
           if (pr.team === 'p' && pr.fl.bounce && pr.bounces < 2) {
             pr.bounces++;
             const tx = this.tile(Math.floor(pr.x / TILE), Math.floor(py / TILE));
-            const blockX = tx === T_WALL || tx === T_DOOR || tx === T_ROCK;
+            const blockX = tx === T_WALL || tx === T_DOOR || tx === T_ROCK || isDestructible(tx);
             if (blockX) pr.vx = -pr.vx; else pr.vy = -pr.vy;
             pr.x = px; pr.y = py;
           } else alive = false;
@@ -1164,7 +1228,43 @@ export class Game {
     if (!this.trapdoor || this.pendingEnd) return;
     const alive = this.alive();
     for (const p of this.players) p.onTrap = !p.dead && Math.hypot(p.x - this.trapdoor.x, p.y - this.trapdoor.y) < 30;
-    if (alive.length && alive.every((p) => p.onTrap)) this.startFloor(this.floor + 1);
+    if (alive.length && alive.every((p) => p.onTrap)) {
+      this.descendT = 1.1;
+      this.emit({ k: 'descend' });
+    }
+  }
+
+  // ---------------------------------------------------------- obstacles destructibles
+  hitTile(tx, ty, n) {
+    const idx = ty * ROOM_W + tx;
+    const t = this.room.tiles[idx];
+    if (!isDestructible(t)) return;
+    const hp = (this.room.thp[idx] ?? 1) - n;
+    const x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE;
+    if (hp > 0) {
+      this.room.thp[idx] = hp;
+      this.emit({ k: 'thit', x, y, t });
+      return;
+    }
+    delete this.room.thp[idx];
+    this.room.tiles[idx] = T_FLOOR;
+    this.flowT = 0;
+    this.emit({ k: 'tbreak', x, y, t });
+    // butin
+    const luck = Math.max(0, ...this.players.map((p) => p.stats.luck));
+    const r = this.rng.next();
+    if (t === T_GPOOP) {
+      const n2 = this.rng.int(3, 5);
+      for (let i = 0; i < n2; i++) this.room.pickups.push(this.makePickup('coin', x + this.rng.range(-14, 14), y + this.rng.range(-10, 10)));
+    } else if (t === T_POOP) {
+      if (r < 0.22 + luck * 0.03) this.room.pickups.push(this.makePickup('coin', x, y));
+      else if (r < 0.28 + luck * 0.03) this.room.pickups.push(this.makePickup('heart', x, y));
+    } else if (t === T_FIRE) {
+      if (r < 0.18 + luck * 0.03) this.room.pickups.push(this.makePickup('coin', x, y));
+    } else if (t === T_POT) {
+      if (r < 0.3 + luck * 0.03) this.room.pickups.push(this.makePickup('coin', x, y));
+      else if (r < 0.4 + luck * 0.03) this.room.pickups.push(this.makePickup('heart', x, y));
+    }
   }
 
   // ---------------------------------------------------------- état envoyé au rendu
@@ -1192,11 +1292,14 @@ export class Game {
         id: e.id, t: e.type, x: r1(e.x), y: r1(e.y), r: e.r, hp: Math.ceil(e.hp), mhp: Math.ceil(e.maxHp),
         b: e.boss ? 1 : 0, el: e.elite ? 1 : 0, vx: r1(e.vx), hit: e.hitT > 0 ? 1 : 0, sl: e.slowT > 0 ? 1 : 0,
         bu: e.burnT > 0 ? 1 : 0, po: e.poisonT > 0 ? 1 : 0, w: e.windup ? 1 : 0, air: e.airborne ? 1 : 0,
-        z: r1(e.z || 0), fd: r1(e.fade || 0), sp: e.spawnT > 0 ? r1(e.spawnT) : 0, ph: e.phase || 0,
+        z: r1(e.z || 0), fd: r1(e.fade || 0), rg: e.rage ? 1 : 0, bt: e.biting > 0 ? 1 : 0, vy: r1(e.vy), sp: e.spawnT > 0 ? r1(e.spawnT) : 0, ph: e.phase || 0,
       })),
       proj: this.projs.map((p) => [p.id, r1(p.x), r1(p.y), r1(p.r), p.c, p.team === 'p' ? 1 : 0]),
       pickups: room.pickups.map((pk) => ({ id: pk.id, k: pk.kind, x: pk.x, y: pk.y, item: pk.item, price: pk.price })),
       trap: this.trapdoor,
+      biome: this.biomeId,
+      dyn: Object.entries(room.thp).map(([i, hp]) => [+i, room.tiles[+i], hp]),
+      desc: this.descendT > 0 ? Math.round((1 - this.descendT / 1.1) * 100) / 100 : 0,
       boss: boss ? { name: boss.name, hp: Math.max(0, boss.hp), mhp: boss.maxHp } : null,
       doorWait: atDoor, aliveCount: this.alive().length,
       run: this.runStats,

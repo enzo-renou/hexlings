@@ -4,6 +4,7 @@
 import { Game } from '/shared/game.js';
 import { DT } from '/shared/constants.js';
 import { CHARACTERS, CHAR_ORDER, ITEMS, RELICS } from '/shared/data.js';
+import { BIOMES } from '/shared/biomes.js';
 import { Renderer, drawWizard } from './render.js';
 import { Input } from './input.js';
 import { Net } from './net.js';
@@ -15,7 +16,8 @@ const canvas = $('#game');
 const renderer = new Renderer(canvas);
 const input = new Input(canvas);
 meta.load();
-audio.muted = !!meta.data.muted;
+audio.setMuted(!!meta.data.muted);
+audio.setMusicMuted(!!meta.data.musicMuted);
 
 let mode = null;      // 'solo' | 'multi' | null
 let game = null;      // simulation locale (solo)
@@ -126,6 +128,7 @@ function renderTitle() {
   const d = meta.data;
   $('#profile-stats').textContent = `Runs : ${d.runs} · Victoires : ${d.wins} · Meilleur étage : ${d.bestFloor || '-'} · Monstres vaincus : ${d.kills}`;
   $('#btn-mute').textContent = `Son : ${audio.muted ? 'non' : 'oui'}`;
+  $('#btn-music').textContent = `Musique : ${audio.musicMuted ? 'non' : 'oui'}`;
 }
 
 // ---------------------------------------------------------- solo
@@ -142,7 +145,8 @@ function beginRun() {
   ended = false;
   acc = 0;
   runStart = performance.now();
-  renderer.parts = []; renderer.toasts = []; renderer.banner = null;
+  renderer.reset();
+  musicBiome = null;
   meta.data.runs++;
   meta.save();
   show(null);
@@ -221,6 +225,14 @@ function renderLobby() {
 
 // ---------------------------------------------------------- événements de jeu
 const shootThrottle = new Map();
+renderer.onDoorSlam = () => audio.play('doorSlam');
+renderer.onDoorOpen = () => audio.play('doorOpen');
+let musicBiome = null;
+function updateMusic(snap) {
+  if (!snap) return;
+  if (snap.biome !== musicBiome) { musicBiome = snap.biome; audio.music(BIOMES[snap.biome]?.music); }
+  audio.intensity(snap.boss ? 2 : snap.room.cleared ? 0 : 1);
+}
 function handleEvents(evs, snap, meId) {
   const names = new Map(snap.players.map((p) => [p.id, p.name]));
   for (const ev of evs) {
@@ -229,22 +241,34 @@ function handleEvents(evs, snap, meId) {
     switch (ev.k) {
       case 'shoot': {
         const t = performance.now();
-        if (t - (shootThrottle.get(ev.pid) || 0) > 70) { audio.play('shoot', mine); shootThrottle.set(ev.pid, t); }
+        if (t - (shootThrottle.get(ev.pid) || 0) > (mine ? 60 : 140)) {
+          const p = snap.players.find((q) => q.id === ev.pid);
+          audio.shoot(p ? p.c : 'pyra', mine);
+          shootThrottle.set(ev.pid, t);
+        }
         break;
       }
       case 'hit': audio.play('hit'); break;
-      case 'die': audio.play(ev.boss ? 'boom' : 'die'); break;
+      case 'die': if (ev.boss) audio.play('boom'); else audio.die(ev.t); break;
       case 'hurt': if (mine) audio.play('hurt'); break;
+      case 'pdie': audio.play('pdie'); break;
+      case 'revive': audio.play('revive'); break;
       case 'coin': if (mine) audio.play('coin'); break;
       case 'heal': if (mine) audio.play('heal'); break;
       case 'item': if (mine) { audio.play('item'); meta.seeItem(ev.item); } break;
-      case 'room': audio.play('door'); break;
+      case 'room': if (ev.dir) audio.play('whoosh'); break;
       case 'clear': audio.play('clear'); break;
       case 'boss': audio.play('boss'); break;
-      case 'boom': case 'slam': audio.play('boom'); break;
+      case 'phase': audio.play('phase'); break;
+      case 'boom': audio.play('boom'); break;
+      case 'slam': audio.play('slam'); break;
       case 'spell': audio.play('spell'); break;
+      case 'summon': audio.play('summon'); break;
       case 'eshoot': audio.play('eshoot'); break;
       case 'zap': audio.play('zap'); break;
+      case 'thit': audio.play('thit', ev.t); break;
+      case 'tbreak': audio.play('tbreak', ev.t); break;
+      case 'descend': audio.play('descend'); break;
       case 'floor':
         audio.play('floor');
         if (ev.n > meta.data.bestFloor) { meta.data.bestFloor = ev.n; meta.save(); }
@@ -252,6 +276,7 @@ function handleEvents(evs, snap, meId) {
       case 'unlock': meta.unlock(ev.char); break;
     }
   }
+  updateMusic(snap);
 }
 
 // ---------------------------------------------------------- fin de run
@@ -295,6 +320,7 @@ function endRun(snap, meId) {
 }
 
 function quitToMenu() {
+  audio.music(null); musicBiome = null;
   if (mode === 'multi' && net) { net.leave(); lobby = null; }
   mode = null; game = null; inGame = false; paused = false; ended = false;
   renderTitle();
@@ -380,11 +406,13 @@ $('#btn-reset').onclick = () => {
   meta.data = { ...meta.load() };
   location.reload();
 };
-$('#btn-mute').onclick = () => { audio.muted = !audio.muted; meta.data.muted = audio.muted; meta.save(); renderTitle(); };
+$('#btn-mute').onclick = () => { audio.unlock(); audio.setMuted(!audio.muted); meta.data.muted = audio.muted; meta.save(); renderTitle(); };
+$('#btn-music').onclick = () => { audio.unlock(); audio.setMusicMuted(!audio.musicMuted); meta.data.musicMuted = audio.musicMuted; meta.save(); renderTitle(); };
 document.querySelectorAll('.close').forEach((b) => (b.onclick = () => show('#screen-title')));
 addEventListener('keydown', (e) => {
   if (e.code === 'Escape') togglePause();
-  if (e.code === 'KeyM' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { audio.muted = !audio.muted; meta.data.muted = audio.muted; meta.save(); }
+  if (e.code === 'KeyM' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { audio.setMuted(!audio.muted); meta.data.muted = audio.muted; meta.save(); }
+  if (e.code === 'KeyN' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { audio.setMusicMuted(!audio.musicMuted); meta.data.musicMuted = audio.musicMuted; meta.save(); }
 });
 addEventListener('pointerdown', () => audio.unlock(), { once: true });
 

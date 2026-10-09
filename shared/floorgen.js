@@ -1,7 +1,7 @@
 // Génération procédurale d'un étage, façon Binding of Isaac :
 // une grille de salles reliées par des portes, la salle du boss au bout
 // du plus long chemin, une salle au trésor et une boutique en cul-de-sac.
-import { ROOM_W, ROOM_H, T_FLOOR, T_WALL, T_ROCK, T_PIT, T_DOOR, DIRS, DIR_NAMES } from './constants.js';
+import { ROOM_W, ROOM_H, T_FLOOR, T_WALL, T_ROCK, T_PIT, T_DOOR, T_POOP, T_FIRE, T_POT, T_GPOOP, DESTRUCT_HP, DIRS, DIR_NAMES } from './constants.js';
 
 const GW = 9, GH = 9;
 
@@ -24,7 +24,7 @@ const LAYOUTS = [
 
 const key = (x, y) => x + ',' + y;
 
-export function generateFloor(rng, floor) {
+export function generateFloor(rng, floor, biome) {
   const target = Math.min(22, Math.floor(6 + floor * 1.6) + rng.int(0, 1));
   for (let attempt = 0; attempt < 500; attempt++) {
     const grid = new Map();
@@ -80,6 +80,8 @@ export function generateFloor(rng, floor) {
       r.doors = {};
       for (const d of DIR_NAMES) r.doors[d] = grid.has(key(r.gx + DIRS[d].dx, r.gy + DIRS[d].dy));
       r.tiles = buildTiles(rng, r, floor);
+      r.thp = {};
+      if (biome && (r.type === 'normal' || (r.type === 'boss' && rng.chance(0.4)))) placeDestructibles(rng, r, biome);
       r.visited = false;
       r.cleared = r.type !== 'normal' && r.type !== 'boss';
       r.populated = false;
@@ -155,4 +157,56 @@ function validate(t, room) {
     if (x > 0 && y > 0 && x < ROOM_W - 1 && y < ROOM_H - 1) t[i] = T_ROCK;
   }
   return true;
+}
+
+// Obstacles destructibles : crottes, feux, vases (selon le biome)
+function placeDestructibles(rng, room, biome) {
+  const t = room.tiles;
+  const w = biome.obstacles || { poop: 1, fire: 1, pot: 1 };
+  const kinds = [{ k: T_POOP, weight: w.poop }, { k: T_FIRE, weight: w.fire }, { k: T_POT, weight: w.pot }];
+  const banned = new Set([[7, 1], [7, 7], [1, 4], [13, 4], [7, 2], [7, 6], [2, 4], [12, 4], [7, 4], [6, 4], [8, 4]].map(([x, y]) => y * ROOM_W + x));
+  const n = room.type === 'boss' ? 2 : rng.int(0, 5);
+  for (let i = 0; i < n; i++) {
+    const free = [];
+    for (let y = 1; y < ROOM_H - 1; y++) for (let x = 1; x < ROOM_W - 1; x++) {
+      const idx = y * ROOM_W + x;
+      if (t[idx] === T_FLOOR && !banned.has(idx)) free.push(idx);
+    }
+    if (!free.length) return;
+    let idx = rng.pick(free);
+    if (room.type === 'boss') idx = rng.pick([1 * ROOM_W + 1, 1 * ROOM_W + 13, 7 * ROOM_W + 1, 7 * ROOM_W + 13]);
+    if (t[idx] !== T_FLOOR) continue;
+    let kind = room.type === 'boss' ? T_FIRE : rng.weighted(kinds).k;
+    if (kind === T_POOP && rng.chance(0.04)) kind = T_GPOOP;
+    // parfois une petite rangée de 2-3 du même type
+    const cells = [idx];
+    if (rng.chance(0.35) && room.type !== 'boss') {
+      const [dx, dy] = rng.pick([[1, 0], [0, 1]]);
+      for (let k = 1; k <= rng.int(1, 2); k++) {
+        const x = (idx % ROOM_W) + dx * k, y = ((idx / ROOM_W) | 0) + dy * k;
+        const j = y * ROOM_W + x;
+        if (x > 0 && y > 0 && x < ROOM_W - 1 && y < ROOM_H - 1 && t[j] === T_FLOOR && !banned.has(j)) cells.push(j);
+      }
+    }
+    for (const c of cells) t[c] = kind;
+    if (!doorsConnected(t)) { for (const c of cells) t[c] = T_FLOOR; continue; }
+    for (const c of cells) room.thp[c] = DESTRUCT_HP[kind];
+  }
+}
+
+function doorsConnected(t) {
+  const entries = [[7, 1], [7, 7], [1, 4], [13, 4]].map(([x, y]) => y * ROOM_W + x);
+  const seen = new Set([entries[0]]);
+  const q = [entries[0]];
+  while (q.length) {
+    const i = q.shift();
+    const x = i % ROOM_W, y = (i / ROOM_W) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const ni = (y + dy) * ROOM_W + x + dx;
+      if (x + dx <= 0 || y + dy <= 0 || x + dx >= ROOM_W - 1 || y + dy >= ROOM_H - 1) continue;
+      if (seen.has(ni) || t[ni] !== T_FLOOR) continue;
+      seen.add(ni); q.push(ni);
+    }
+  }
+  return entries.every((e) => seen.has(e));
 }
