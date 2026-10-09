@@ -14,6 +14,8 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 - **Potions** (les « pilules », touche R / L2) : 16 potions, couleurs mélangées à chaque run, on découvre leur effet en les buvant.
 - **13 biomes** (2 étages chacun, tirés au hasard), dont 3 nouveaux : Marais Putride, Ruines Ensablées, Horlogerie Arcanique. **~130 monstres**, **41 boss** (serpents à anneaux, jumeaux, boss protégés par des cristaux, boss avec des mains…) et des **boss finaux uniques** à l'étage 10.
 - **159 objets** dont de vraies armes qui changent la façon de tirer : **rayon chargé** (façon Azazel/Brimstone), laser continu, **anneau de sang** chargé, **lance-bombes**, couteau, ludovico… + **familiers**, objets **maudits** et **synergies**.
+- **Volume façon Isaac** : rochers, pots, piles de livres et coffres dessinés en 3/4 avec faces éclairées et faces dans l'ombre, ombres portées, et ombre des murs sur le sol.
+- **Textes lisibles** : textes lisses, nombres (argent, prix, stats) dans une police ronde et grasse.
 - **Pixel art unifié** : tout le monde du jeu (sol, murs, sorciers, monstres, boss, objets, effets) est dessiné sur une seule grille de 480x288 pixels, chaque pixel affiché en 3x3 : même taille de pixel partout, façon rétro médiéval.
 - **Effets** : pièces, clés, bombes et cœurs qui filent vers leur compteur, poussière quand les portes claquent, monstres qui dérapent quand on les touche, eau, lave, marais et vide animés, pluie dans le marais, chapeau qui s'envole quand un sorcier tombe, carte « VS » à l'arrivée de chaque boss, ralenti et zoom quand il meurt, chiffres de dégâts (désactivables), bord de l'écran qui bat en rouge quand il te reste un cœur, traces de pas dans la neige, le sable et la boue, caméra qui regarde devant toi dans les grandes salles.
 - **Équilibrage du mode Normal** : petits étages au début (comme Isaac) qui grandissent en descendant, pas de chevaliers à bouclier en solo (en multi, ils baissent leur bouclier pour tirer), au plus 1 monstre coriace (crapaud, crocodile…) par salle aux étages 1-2.
@@ -52,7 +54,7 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 
 Les menus se naviguent à la manette (croix ou stick, A valide, B revient).
 
-Les touches affichées en jeu (sort, orbe, potion, sac, consignes de la première salle) suivent le dernier appareil touché : clavier, ou manette PlayStation / Xbox / Switch avec ses vrais boutons (✕ ○ □ △, L1, R2…).
+Les touches affichées en jeu (sort, bombe, orbe, potion, sac) suivent le dernier appareil touché : clavier, ou manette PlayStation / Xbox / Switch avec ses vrais boutons (✕ ○ □ △, L1, R2…).
 
 ## Lancer en local
 

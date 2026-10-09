@@ -12,6 +12,7 @@ import {
   drawBombSprite, drawKeySprite, drawChestSprite, drawAltar, drawSpikes, drawTurret, drawCrumble, drawStatue, drawBanner, drawCandles,
 } from './sprites.js';
 import { drawMonster, drawWizardSprite, drawItemIcon } from './art.js';
+import { drawProp } from './art_props.js';
 import { pixelize, quantizeDark, paintRoom } from './pixel.js';
 
 export { drawHeart };
@@ -123,10 +124,14 @@ export class Renderer {
   }
   hookText(src, dst) {
     const lum = (c) => { if (typeof c !== 'string' || c[0] !== '#') return 1; const n = parseInt(c.length === 4 ? c.slice(1).replace(/./g, '$&$&') : c.slice(1, 7), 16); return (((n >> 16) & 255) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11) / 255; };
+    // les nombres (argent, prix, stats, dégâts...) dans une police nette et grasse, très lisible
+    const NUM = '"Nunito", "Arial Rounded MT Bold", "Verdana", sans-serif';
+    const numeric = (t) => { const str = String(t).replace(/\s/g, ''); if (!str) return false; const d = str.replace(/[^0-9]/g, '').length; return d > 0 && d / str.length >= 0.5; };
     src.fillText = (text, x, y, maxW) => {
       const m = src.getTransform();
       dst.setTransform(m.a * MS, m.b * MS, m.c * MS, m.d * MS, m.e * MS, m.f * MS);
-      dst.font = src.font; dst.textAlign = src.textAlign; dst.textBaseline = src.textBaseline;
+      dst.font = src.font;
+      if (numeric(text)) { const sz = /(\d+(?:\.\d+)?)px/.exec(src.font); dst.font = `900 ${sz ? Math.round(+sz[1] * 1.05) : 14}px ${NUM}`; } dst.textAlign = src.textAlign; dst.textBaseline = src.textBaseline;
       dst.globalAlpha = src.globalAlpha; dst.fillStyle = src.fillStyle;
       if (lum(src.fillStyle) > 0.35) {
         dst.lineJoin = 'round'; dst.strokeStyle = 'rgba(12,6,20,0.9)'; dst.lineWidth = 3 / MS / Math.max(0.3, Math.hypot(m.a, m.b));
@@ -139,6 +144,7 @@ export class Renderer {
   // pastille de touche : ronde et colorée pour les boutons de face de la manette
   keyBadge(c, label, x, y) {
     const k = this.keyNames || {};
+    const prevAlign = c.textAlign;
     const FACE = { ps: { '✕': '#7aa8ff', '○': '#ff6a7a', '□': '#ff8ad8', '△': '#5affb0' }, xbox: { A: '#6ae06a', B: '#ff5a5a', X: '#5aa8ff', Y: '#ffd34a' }, switch: { A: '#ff6a6a', B: '#ffd34a', X: '#6aa8ff', Y: '#6ae06a' } };
     const col = k.pad && FACE[k.pad] ? FACE[k.pad][label] : null;
     c.font = `bold 10px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -152,7 +158,7 @@ export class Renderer {
       c.fillStyle = '#2a2236'; c.fillRect(Math.round(x - w / 2), y - 7, Math.round(w), 14);
       c.fillStyle = '#e8dcc0'; c.fillText(label, x, y + 0.5);
     }
-    c.textBaseline = 'alphabetic';
+    c.textBaseline = 'alphabetic'; c.textAlign = prevAlign;
   }
   // un objet ramassé file vers son compteur en haut à gauche
   fly(kind, x, y) { this.flyers.push({ kind, sx: x - this.camX, sy: y - this.camY - 10, t: 0 }); if (this.flyers.length > 30) this.flyers.shift(); }
@@ -370,6 +376,24 @@ export class Renderer {
     paintRoom(this.lowBg.getContext('2d'), B, mask, W, H, Math.round(TILE * PX), seed);
     g.imageSmoothingEnabled = false;
     g.drawImage(this.lowBg, 0, 0);
+    // profondeur : les murs projettent une ombre sur le sol (plus forte sous le mur du haut)
+    {
+      const isW = (x, y) => x < 0 || y < 0 || x >= W || y >= H || mask[y * W + x] === 1;
+      g.setTransform(PX, 0, 0, PX, 0, 0);
+      const bands = [[0.3, 5], [0.18, 10], [0.09, 16]];
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (isW(x, y)) continue;
+        const X = x * TILE, Y = y * TILE;
+        for (const [a, d] of bands) {
+          g.fillStyle = `rgba(6,2,12,${a})`;
+          if (isW(x, y - 1)) g.fillRect(X, Y, TILE, Math.round(d * 1.4));
+          if (isW(x - 1, y)) g.fillRect(X, Y, Math.round(d * 0.8), TILE);
+          if (isW(x + 1, y)) g.fillRect(X + TILE - Math.round(d * 0.8), Y, Math.round(d * 0.8), TILE);
+          if (isW(x, y + 1)) g.fillRect(X, Y + TILE - Math.round(d * 0.5), TILE, Math.round(d * 0.5));
+        }
+      }
+      g.setTransform(1, 0, 0, 1, 0, 0);
+    }
     const cells = SHAPES[room.shape] || SHAPES['1x1'];
     const t = this.tmp.ctx;
     // 1) décor plat par case (tapis, cercles runiques, fleurs...) : tramé, sans contour
@@ -385,7 +409,7 @@ export class Renderer {
     t.setTransform(1, 0, 0, 1, 0, 0); t.clearRect(0, 0, QW, QH); t.setTransform(PX, 0, 0, PX, 0, 0);
     for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
       const tt = tiles[y * W + x];
-      if (tt === T_ROCK) drawRock(t, x * TILE, y * TILE, B.rockStyle, B, hash(x + seed, y));
+      if (tt === T_ROCK) { const hh = hash(x + seed, y); drawProp(t, 'rock', { style: B.rockStyle, B, h: hh }, `${B.rockStyle}|${B.rock}|${hh > 0.6 ? 1 : 0}`, x * TILE + 24, y * TILE + 24); }
       else if (tt === T_PIT) this.drawPit(t, x * TILE, y * TILE, B, tiles, x, y, W);
     }
     // fissures discrètes là où se cache parfois un passage secret
@@ -625,12 +649,15 @@ export class Renderer {
     for (const [idx, type, hp] of snap.dyn) {
       const x = (idx % W + 0.5) * TILE, y = (((idx / W) | 0) + 0.5) * TILE;
       if (!this.inView(x, y, 60)) continue;
-      if (type === T_POOP || type === T_GPOOP) drawPoop(c, x, y, hp, type === T_GPOOP, this.t + idx);
+      if (type === T_POOP || type === T_GPOOP) { const sd = (idx * 2654435761) >>> 20; drawProp(c, 'books', { hp, gold: type === T_GPOOP, seed: sd }, `${type}|${hp}|${sd}`, x, y); }
       else if (type === T_FIRE) {
         drawFire(c, x, y, hp, B.fire, this.t, idx);
         lights.push({ x, y: y - 6, r: 70 + hp * 14 + Math.sin(this.t * 11 + idx) * 6, c: fireColor(B.fire), a: 1 });
         if (Math.random() < 0.15) this.parts.push({ x: x + (Math.random() - 0.5) * 14, y: y - 10, vx: (Math.random() - 0.5) * 20, vy: -50 - Math.random() * 30, life: 0.7, max: 0.7, color: fireColor(B.fire), size: 2, glow: true });
-      } else if (type === T_POT) drawPot(c, x, y, potStyle);
+      } else if (type === T_POT) {
+        if (potStyle === 'books') { const sd = (idx * 40503) >>> 6; drawProp(c, 'books', { hp: 3, seed: sd }, `pot|${sd}`, x, y); }
+        else drawProp(c, 'pot', { style: potStyle }, potStyle, x, y);
+      }
       else if (type === T_SPIKES) drawSpikes(c, x - 24, y - 24, hp, this.t);
       else if (type === T_TURRET) { drawTurret(c, x - 24, y - 24, hp, this.t); if (hp) lights.push({ x, y: y - 8, r: 50, c: '#ff3a3a', a: 0.7 }); }
       else if (type === T_CRUMBLE) drawCrumble(c, x - 24, y - 24, hp);
@@ -730,7 +757,7 @@ export class Renderer {
     const shadow = (w, h, oy) => { c.fillStyle = 'rgba(0,0,0,0.3)'; c.beginPath(); c.ellipse(pk.x, pk.y + oy, w, h, 0, 0, TAU); c.fill(); };
     if (pk.k === 'bomb') { drawBombSprite(c, pk.x, pk.y + pop, this.t, 0); }
     else if (pk.k === 'key') { drawKeySprite(c, pk.x, pk.y + pop + bob * 0.3); lights.push({ x: pk.x, y: pk.y, r: 26, c: '#ffd34a', a: 0.4 }); }
-    else if (pk.k === 'chest' || pk.k === 'gchest') { drawChestSprite(c, pk.x, pk.y + pop, pk.k === 'gchest'); if (pk.k === 'gchest') lights.push({ x: pk.x, y: pk.y, r: 40, c: '#ffd34a', a: 0.6 }); }
+    else if (pk.k === 'chest' || pk.k === 'gchest') { drawProp(c, 'chest', { gold: pk.k === 'gchest' }, pk.k, pk.x, pk.y + pop - 6); if (pk.k === 'gchest') lights.push({ x: pk.x, y: pk.y, r: 40, c: '#ffd34a', a: 0.6 }); }
     else if (pk.k === 'altar') { drawAltar(c, pk.x, pk.y, this.t); lights.push({ x: pk.x, y: pk.y - 10, r: 90, c: '#ff3a4a', a: 0.8 }); if (me && Math.hypot(me.x - pk.x, me.y - pk.y) < 90) this.texts.push({ x: pk.x, y: pk.y + 44, text: 'Sacrifier 1 cœur ?', color: '#ff8a9a', size: 13, box: true }); }
     else if (pk.k === 'heart' || pk.k === 'soul' || pk.k === 'black') {
       shadow(8, 3, 8);
@@ -1536,7 +1563,6 @@ export class Renderer {
     H.clearRect(0, 0, VIEW_W, VIEW_H);
     this.clearText(this.txtH); this.clearText(this.txtO);
     if (!this.trans && this.zoomK <= 0.004 && !this.showMap) this.drawWorldTexts(H, shx / PX - cx, shy / PX - cy);
-    if (snap.room.type === 'start' && snap.floor === 1) this.drawTutorial(H);
     this.drawHUD(H, snap, me, meId, dt, extra, B);
     if (this.vs) this.drawVersus(H, me, dt);
     pixelize(H, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
@@ -1748,6 +1774,7 @@ export class Renderer {
       tx += 42;
       ctx.save(); ctx.translate(tx + 6, ty + 4); ctx.scale(0.6, 0.6); drawKeySprite(ctx, 0, 0); ctx.restore();
       ctx.fillStyle = '#ffe9b0'; ctx.fillText(String(me.keys).padStart(2, '0'), tx + 15, ty + 10);
+      this.keyBadge(ctx, k.bomb || 'E', hx + 57, ty + 25);
       this.hudPos = { coin: [hx + 6, ty + 5], bomb: [hx + 46, ty + 5], key: [tx + 6, ty + 4], heart: [hx + 8, hy + 6] };
       this.drawFlyers(ctx, dt);
       tx += 42;
@@ -1757,7 +1784,7 @@ export class Renderer {
       const st = me.st;
       const rows = [['⚔', st.dmg, '#ff8a8a'], ['✦', st.tears, '#8ad0ff'], ['➶', st.spd, '#9af0b0'], ['◎', st.rng, '#ffe08a'], ['➹', st.ss, '#d0b8ff'], ['☘', st.luck, '#8de05a']];
       this.frame(ctx, 2, 250, 46, 108, { bg: '#100a18' });
-      ctx.font = `13px ${FONT}`;
+      ctx.font = `13px ${FONT}`; ctx.textAlign = 'left';
       rows.forEach(([ic, v, col], i) => {
         const y = 268 + i * 17;
         ctx.fillStyle = col; ctx.fillText(ic, 7, y);

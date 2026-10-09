@@ -879,7 +879,7 @@ requestAnimationFrame(frame);
   const bar = $('#load-bar'), txt = $('#load-text');
   const step = (w, t) => { bar.style.width = w; txt.textContent = t; };
   step('25%', 'Ouverture des grimoires...');
-  await Promise.race([document.fonts?.load('16px "Pixelify Sans"'), new Promise((r) => setTimeout(r, 2500))]);
+  await Promise.race([Promise.all([document.fonts?.load('16px "Pixelify Sans"'), document.fonts?.load('900 16px "Nunito"')]), new Promise((r) => setTimeout(r, 2500))]);
   renderer.bgKey = '';
   step('60%', 'Allumage des torches...');
   await Promise.race([meta.syncFromCloud(), new Promise((r) => setTimeout(r, 2500))]);

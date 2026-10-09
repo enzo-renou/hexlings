@@ -6,7 +6,7 @@
 // ============================================================
 
 // lumière venant d'en haut à gauche, un peu de face
-const LX = -0.48, LY = -0.62, LZ = 0.62;
+const LX = -0.5, LY = -0.64, LZ = 0.52; // lumière en haut à gauche, assez rasante pour bien marquer les volumes
 const LN = Math.hypot(LX, LY, LZ);
 const L = [LX / LN, LY / LN, LZ / LN];
 
