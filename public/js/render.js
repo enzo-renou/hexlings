@@ -102,7 +102,7 @@ export class Renderer {
     this.lctx = this.light.ctx;
     this.shakeOn = true;
     this.highlight = 'arrow';
-    this.dmgNumbers = true; this.dnums = []; this.prints = []; this.stepAcc = new Map(); this.slow = null; this.zoomK = 0; this.lookX = 0; this.lookY = 0; this.vs = null; this.flyers = []; this.hats = []; // mise en valeur de son sorcier en multi : off | ring | arrow
+    this.dmgNumbers = true; this.dnums = []; this.prints = []; this.stepAcc = new Map(); this.slow = null; this.zoomK = 0; this.lookX = 0; this.lookY = 0; this.vs = null; this.flyers = []; this.hats = []; this.heals = []; // mise en valeur de son sorcier en multi : off | ring | arrow
     this.camX = 0; this.camY = 0;
     this.reset();
   }
@@ -228,8 +228,8 @@ export class Renderer {
       case 'cursedoor': this.float(ev.x, ev.y - 44, 'La porte maudite te griffe !', '#ff5a6a', 1.6); break;
       case 'gotbomb': if (ev.pid === meId) this.fly('bomb', ev.x, ev.y); else this.float(ev.x, ev.y - 14, '+1 bombe', '#e8e0d0', 0.8); break;
       case 'gotkey': if (ev.pid === meId) this.fly('key', ev.x, ev.y); else this.float(ev.x, ev.y - 14, '+1 clé', '#ffd34a', 0.8); break;
-      case 'gotsoul': this.float(ev.x, ev.y - 20, '+ cœur d’âme', '#7ac8ff', 0.9); this.burst(ev.x, ev.y, 14, '#7ac8ff', 90, 0.7, 3, { up: -40, glow: true }); break;
-      case 'gotblack': this.float(ev.x, ev.y - 20, '+ cœur noir', '#b08ac8', 0.9); this.burst(ev.x, ev.y, 14, '#4a2a5a', 90, 0.7, 3, { up: -40 }); break;
+      case 'gotsoul': if (ev.pid) this.heals.push({ pid: ev.pid, kind: 's', t: 0 }); this.float(ev.x, ev.y - 20, '+ cœur d’âme', '#7ac8ff', 0.9); this.burst(ev.x, ev.y, 14, '#7ac8ff', 90, 0.7, 3, { up: -40, glow: true }); break;
+      case 'gotblack': if (ev.pid) this.heals.push({ pid: ev.pid, kind: 'b', t: 0 }); this.float(ev.x, ev.y - 20, '+ cœur noir', '#b08ac8', 0.9); this.burst(ev.x, ev.y, 14, '#4a2a5a', 90, 0.7, 3, { up: -40 }); break;
       case 'blackblast': this.flashC = { c: '#2a0a3a', a: 0.55 }; this.shake = 14; this.ring(ev.x, ev.y, 260, '#6a2a8a', 0.6, 6); this.toast('Cœur noir brisé !', 'Les ténèbres frappent tous les ennemis', '#b08ac8', '🖤', true); break;
       case 'gotorb': if (ev.pid === meId) this.toast(ORBS[ev.id]?.name || 'Orbe', ORBS[ev.id]?.desc || '', '#8ad8ff', '🔮', true); break;
       case 'gotpotion': if (ev.pid === meId) this.toast(ev.known ? POTIONS[ev.id].name : 'Potion inconnue', ev.known ? POTIONS[ev.id].desc : 'Bois-la pour découvrir son effet', '#ff9af0', '⚗️', true); break;
@@ -289,7 +289,7 @@ export class Renderer {
       }
       case 'revive': this.burst(ev.x, ev.y, 44, '#ffb347', 230, 1, 4, { glow: true }); this.ring(ev.x, ev.y, 80, '#ffb347', 0.6, 5); this.toast('Plume de Phénix !', `${pname(ev.pid)} renaît de ses cendres`, '#ffb347'); break;
       case 'aegis': this.ring(ev.x, ev.y, 44, '#7ad1ff', 0.4, 4); this.float(ev.x, ev.y - 30, 'Égide !', '#7ad1ff', 1); break;
-      case 'heal': this.burst(ev.x, ev.y, 12, '#ff6a8a', 80, 0.7, 3, { up: -40, glow: true }); if (ev.pid === meId) this.fly('heart', ev.x, ev.y); else this.float(ev.x, ev.y - 20, '+♥', '#ff6a8a', 0.8); break;
+      case 'heal': if (ev.pid) this.heals.push({ pid: ev.pid, kind: 'r', t: 0 }); this.burst(ev.x, ev.y, 12, '#ff6a8a', 80, 0.7, 3, { up: -40, glow: true }); if (ev.pid === meId) this.fly('heart', ev.x, ev.y); else this.float(ev.x, ev.y - 20, '+♥', '#ff6a8a', 0.8); break;
       case 'coin': this.burst(ev.x, ev.y, 8, '#ffd34a', 80, 0.45, 2.5, { up: -40, glow: true }); if (ev.pid === meId) this.fly('coin', ev.x, ev.y); else this.float(ev.x, ev.y - 14, '+1', '#ffd34a', 0.6); break;
       case 'item': {
         const it = ITEMS[ev.item];
@@ -339,7 +339,7 @@ export class Renderer {
         this.dnums.push({ x: ev.x + (Math.random() - 0.5) * 10, y: ev.y, vx: (Math.random() - 0.5) * 50, vy: -90, n: ev.n, life: 0.75, b: ev.b });
         if (this.dnums.length > 50) this.dnums.shift();
         break;
-      case 'bossdown': this.slow = { t: 0, dur: 1.3, k: 0.22 }; this.zoomK = 0.14; this.flashW = 0.45; this.banner = { title: 'Boss vaincu !', sub: ev.floor >= 10 ? 'La tour est libérée...' : 'Une trappe s’est ouverte', life: 2.4, color: '#ffe08a' }; this.trapBorn = this.t; break;
+      case 'bossdown': this.slow = { t: 0, dur: 1.3, k: 0.22 }; this.zoomK = 0.14; this.flashW = 0.45; this.banner = { title: 'Boss vaincu !', sub: ev.floor >= 10 ? 'La tour est libérée...' : 'La trappe va s’ouvrir...', life: 2.4, color: '#ffe08a' }; this.trapBorn = this.t; break;
       case 'unlock': this.toast('Nouveau sorcier débloqué !', CHARACTERS[ev.char] ? `${CHARACTERS[ev.char].name} ${CHARACTERS[ev.char].title}` : '', '#c79bff', '🔓'); break;
       case 'thit': {
         const col = ev.t === T_FIRE ? fireColor(B.fire) : ev.t === T_POT ? '#b0683a' : ev.t === T_GPOOP ? '#ffd34a' : '#c8a878';
@@ -703,7 +703,16 @@ export class Renderer {
         if (potStyle === 'books') { const sd = (idx * 40503) >>> 6; drawProp(c, 'books', { hp: 3, seed: sd }, `pot|${sd}`, x, y); }
         else drawProp(c, 'pot', { style: potStyle }, potStyle, x, y);
       }
-      else if (type === T_SPIKES) drawSpikes(c, x - 24, y - 24, hp, this.t);
+      else if (type === T_SPIKES) {
+        // les pointes sortent et rentrent en douceur ; elles dépassent un peu juste avant de sortir
+        this.spikeAnim = this.spikeAnim || new Map();
+        const target = hp === 1 ? 4 : hp === 2 ? 1 + (Math.sin(this.t * 40) > 0 ? 0.6 : 0) : 0;
+        let a = this.spikeAnim.get(idx) ?? 0;
+        a += (target - a) * Math.min(1, (target > a ? 22 : 9) * (1 / 60));
+        this.spikeAnim.set(idx, a);
+        const lv = Math.round(a);
+        drawProp(c, 'spikes', { h: lv }, 'sp' + lv, x, y);
+      }
       else if (type === T_TURRET) { drawTurret(c, x - 24, y - 24, hp, this.t); if (hp) lights.push({ x, y: y - 8, r: 50, c: '#ff3a3a', a: 0.7 }); }
       else if (type === T_CRUMBLE) drawCrumble(c, x - 24, y - 24, hp);
       if (type === T_GPOOP) lights.push({ x, y, r: 40, c: '#ffd34a', a: 0.5 });
@@ -740,6 +749,24 @@ export class Renderer {
   drawTrapdoor(c, snap, B, lights) {
     if (!snap.trap) return;
     const { x, y } = snap.trap;
+    if (snap.trap.open === false) {
+      // trappe encore fermée : couvercle en bois qui tremble, s'ouvre au bout de 2,5 s
+      const sh = Math.sin(this.t * 30) * (this.t - (this.trapBorn || 0) > 1.8 ? 1.2 : 0);
+      c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.ellipse(x + 2, y + 4, 33, 24, 0, 0, TAU); c.fill();
+      c.fillStyle = '#4a3220'; c.beginPath(); c.ellipse(x + sh, y, 31, 23, 0, 0, TAU); c.fill();
+      c.fillStyle = '#6a4a2c';
+      for (let i = -2; i <= 2; i++) { c.fillRect(x + sh + i * 12 - 5, y - 20 + Math.abs(i) * 2, 10, 40 - Math.abs(i) * 4); }
+      c.fillStyle = '#3a2618'; c.fillRect(x + sh - 28, y - 4, 56, 4); c.fillRect(x + sh - 2, y - 21, 4, 42);
+      c.fillStyle = '#c8a040'; c.beginPath(); c.arc(x + sh, y, 4, 0, TAU); c.fill();
+      this.trapClosed = true;
+      return;
+    }
+    if (this.trapClosed) {
+      // le couvercle saute : la trappe s'ouvre
+      this.trapClosed = false; this.trapBorn = this.t;
+      this.burst(x, y, 22, '#8a6a3a', 200, 0.8, 4, { g: 400, up: -160 });
+      this.ring(x, y, 50, '#ffe08a', 0.4, 3); this.shake = Math.max(this.shake, 5);
+    }
     const age = this.trapBorn != null ? this.t - this.trapBorn : 9;
     const k = Math.max(0.01, clamp01(age / 0.6));
     c.fillStyle = '#2a1e14'; c.beginPath(); c.ellipse(x, y, 36 * k, 27 * k, 0, 0, TAU); c.fill();
@@ -1462,6 +1489,31 @@ export class Renderer {
     }
     this.deaths = this.deaths.filter((d) => d.life > 0);
 
+    // soin : colonne de lumière, anneau au sol et petits cœurs qui montent en spirale autour du sorcier
+    for (const h of this.heals) {
+      h.t += dt;
+      const p = snap.players.find((q) => q.id === h.pid);
+      if (!p) { h.t = 9; continue; }
+      const k = h.t / 1.1, col = { r: ['#ff4a6a', '#ffd0d8'], s: ['#5aa8ff', '#e0f4ff'], b: ['#8a5aa8', '#e8d0ff'] }[h.kind];
+      if (k < 0.55) {
+        const a = 1 - k / 0.55;
+        X.globalAlpha = a; X.fillStyle = col[0];
+        X.fillRect(snapPx(p.x - 13), snapPx(p.y - 70 + k * 30), 1.5, 80); X.fillRect(snapPx(p.x + 12), snapPx(p.y - 60 + k * 30), 1.5, 70);
+        X.fillStyle = col[1]; X.fillRect(snapPx(p.x - 1), snapPx(p.y - 80 + k * 40), 1.5, 60);
+        X.strokeStyle = col[0]; X.lineWidth = 2; X.beginPath(); X.ellipse(p.x, p.y + 12, 10 + k * 50, 4 + k * 18, 0, 0, TAU); X.stroke();
+        X.globalAlpha = 1;
+      }
+      for (let i = 0; i < 4; i++) {
+        const kk = k - i * 0.1;
+        if (kk <= 0 || kk >= 1) continue;
+        const ang = kk * 7 + i * (TAU / 4);
+        X.globalAlpha = kk > 0.75 ? (1 - kk) * 4 : 1;
+        this.drawHeartKind(X, p.x + Math.cos(ang) * 18, p.y + 6 - kk * 60, 7, h.kind);
+      }
+      X.globalAlpha = 1;
+      lights.push({ x: p.x, y: p.y - 10, r: 70 * (1 - k * 0.5), c: col[0], a: Math.max(0, 0.9 - k) });
+    }
+    this.heals = this.heals.filter((h) => h.t < 1.1);
     this.drawProjectiles(E, snap, lights);
     this.drawBeams(E, snap, lights);
 

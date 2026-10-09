@@ -30,6 +30,8 @@ audio.setMusicMuted(!!meta.data.musicMuted);
 const S0 = meta.data.settings;
 audio.setVolumes(S0.sfx, S0.music);
 input.setBindings(S0.keys);
+// ancienne attribution par défaut (sac sur X / Carré, émote sur la flèche du haut) -> nouvelle
+if (S0.pad && S0.pad.inv === 2) { S0.pad = { ...S0.pad }; delete S0.pad.inv; if (S0.pad.emote1 === 12) delete S0.pad.emote1; }
 input.setPad(S0.pad);
 renderer.shakeOn = S0.shake !== false;
 renderer.highlight = S0.highlight || 'arrow';
@@ -585,7 +587,7 @@ function openInv() {
   invOpen = true;
   if (mode === 'solo') paused = true;
   const me = lastSnap && lastSnap.players.find((p) => p.id === (mode === 'multi' ? net.id : 'local'));
-  renderInventory($('#inv-body'), me, meta.equippedRelics());
+  renderInventory($('#inv-body'), me, meta.equippedRelics(), renderer.keyNames || {});
   $('#inv-close-key').textContent = `(${keyLabel(input.bind.inv)})`;
   show('#modal-inv');
   audio.play('pickup');
@@ -769,7 +771,7 @@ function frameBody(now) {
   } else if (inGame && mode === 'multi' && net) {
     const latest = net.latest();
     const me = latest && latest.players.find((p) => p.id === net.id);
-    const inp = paused ? { mx: 0, my: 0, sx: 0, sy: 0 } : input.get(me);
+    const inp = paused || latest?.intro ? { mx: 0, my: 0, sx: 0, sy: 0 } : input.get(me);
     net.sendInput(inp);
     if (input.consumeSpell() && !paused) net.spell();
     if (input.consume('bomb') && !paused) net.bomb();

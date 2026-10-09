@@ -34,7 +34,8 @@ function run(nPlayers, seed, verbose = false) {
     }
     fightT = 0;
     if (g.trapdoor) {
-      for (const p of g.players) { p.x = g.trapdoor.x; p.y = g.trapdoor.y; }
+      // la trappe ne s'ouvre qu'après un délai : on attend puis on marche dessus
+      if (g.time >= (g.trapdoor.readyAt || 0)) for (const p of g.players) { p.trapBlock = false; p.x = g.trapdoor.x; p.y = g.trapdoor.y; }
       continue;
     }
     if (g.room.type === 'boss') continue;

@@ -139,6 +139,25 @@ const PROPS = {
   },
 };
 
+// piques : dalle de pierre cerclée de fer, 3 x 3 trous ; v.h = hauteur des pointes (0 à 4)
+PROPS.spikes = (b, v) => {
+  const slab = '#4a4452';
+  b.poly([[4, 8], [44, 8], [44, 44], [4, 44]], slab, { bevel: 2.5, tilt: [0, -0.15] });
+  b.rect(4, 8, 40, 2, '#6a6476', { flat: 1 }); b.rect(4, 42, 40, 2, '#2a2632', { flat: 1 });
+  for (const [x, y] of [[6, 10], [41, 10], [6, 41], [41, 41]]) b.dot(x, y, '#9a94a8', 1);
+  const H = v.h || 0;
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+    const cx = 12 + i * 12, cy = 17 + j * 11;
+    b.ell(cx, cy + 2, 4.2, 2.4, '#16121c', { flat: 1 });
+    if (H > 0) {
+      const top = cy + 2 - H * 2.1, w = 3.4;
+      b.poly([[cx - w, cy + 2], [cx, top], [cx, cy + 3]], '#d8d8e4', { tilt: [-0.8, -0.3], bevel: 0.6 });
+      b.poly([[cx, top], [cx + w, cy + 2], [cx, cy + 3]], '#8a8a9c', { tilt: [0.9, 0], bevel: 0.6 });
+      if (H >= 3) b.dot(cx - 1, top + 1.5, '#ffffff', 2);
+      if (H >= 3) b.line(cx - w, cy + 2.5, cx + w, cy + 2.5, '#2a2632');
+    }
+  }
+};
 const cache = new Map();
 function sprite(kind, v, k, key) {
   const id = key + '|' + k;
@@ -158,8 +177,7 @@ export function drawProp(c, kind, v, key, x, y) {
   const pk = c.pxk || 1;
   const spr = sprite(kind, v, pk, kind + '|' + key);
   // ombre portée douce, décalée vers le bas à droite (lumière en haut à gauche)
-  c.fillStyle = 'rgba(0,0,0,0.32)';
-  c.beginPath(); c.ellipse(x + 3, y + 17, 19, 6, 0, 0, Math.PI * 2); c.fill();
+  if (kind !== 'spikes') { c.fillStyle = 'rgba(0,0,0,0.32)'; c.beginPath(); c.ellipse(x + 3, y + 17, 19, 6, 0, 0, Math.PI * 2); c.fill(); }
   c.save(); c.imageSmoothingEnabled = false;
   c.drawImage(spr, Math.round((x - 24) * pk) / pk, Math.round((y - 24) * pk) / pk, spr.width / pk, spr.height / pk);
   c.restore();

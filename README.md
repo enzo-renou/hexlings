@@ -46,10 +46,10 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 | E | R1 | Poser une bombe |
 | A | L1 | Utiliser l'orbe |
 | R | L2 | Boire la potion |
-| & é " ' (1 2 3 4) | Flèches de la croix | Émotes |
+| & é " ' (1 2 3 4) | Flèches ← → ↓ de la croix | Émotes |
 | F | Clic stick gauche | Signaler (« par ici ! ») |
 | Tab (maintenir) | Select | Carte de l'étage |
-| B ou 🎒 | X (Xbox) / Carré (PS) | Inventaire |
+| B ou 🎒 | Flèche du haut de la croix | Inventaire (objets, orbe, potion) |
 | Échap ou ⚙ | Start | Paramètres |
 
 Les menus se naviguent à la manette (croix ou stick, A valide, B revient).

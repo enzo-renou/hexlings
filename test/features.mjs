@@ -260,6 +260,26 @@ const standOn = (p, d) => { p.x = (d.tx + 0.5) * TILE; p.y = (d.ty + 0.5) * TILE
   m.step(DT);
   ok(kn.hp < hp0, 'le chevalier baisse son bouclier quand il tire (on peut le toucher)');
 }
+// --- v0.11 : intro du boss sans bouger, trappe qui s'ouvre après un délai, ruées plafonnées
+{
+  const g = solo(21); g.startFloor(2); g.enterRoom(g.fl.boss, null);
+  const p = g.players[0]; const x0 = p.x, y0 = p.y;
+  g.setInput('a', { mx: 1, my: 1, sx: 1, sy: 0 }); run(g, 1);
+  ok(Math.hypot(p.x - x0, p.y - y0) < 2 && !g.projs.some((q) => q.team === 'p'), 'pendant la carte VS on ne bouge pas et on ne tire pas');
+  const boss = g.enemies.find((e) => e.boss);
+  ok(g.players.every((q) => Math.hypot(q.x - boss.x, q.y - boss.y) > boss.r + q.r), 'le sorcier n’apparaît jamais sur le boss');
+  run(g, 1.5); g.setInput('a', { mx: 1, my: 0, sx: 0, sy: 0 }); run(g, 0.3);
+  ok(Math.hypot(p.x - x0, p.y - y0) > 10, 'après la carte VS on bouge à nouveau');
+  g.setInput('a', { mx: 0, my: 0, sx: 0, sy: 0 });
+  boss.spawnT = 0; g.damageEnemy(boss, 1e6, null); run(g, 0.2);
+  for (const q of g.players) { q.x = g.trapdoor.x; q.y = g.trapdoor.y; q.iframes = 99; }
+  run(g, 1.5);
+  ok(g.floor === 2, 'la trappe ne s’ouvre pas tout de suite (on peut prendre l’objet du boss)');
+  run(g, 2);
+  ok(g.floor === 2, 'déjà sur la trappe quand elle s’ouvre : il faut en sortir avant de descendre');
+  p.x += 80; run(g, 0.2); p.x = g.trapdoor.x; p.y = g.trapdoor.y; run(g, 2);
+  ok(g.floor === 3, 'on descend en remarchant sur la trappe ouverte');
+}
 // --- champions et mode difficile
 {
   const g = solo(4, 'pyra', { difficulty: 'hard' });

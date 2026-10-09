@@ -566,9 +566,18 @@ export class Game {
     }
     if (bd.hands) for (const side of [-1, 1]) this.spawnEnemy(bd.hands, head.x + side * 120, head.y + 60, { link: head.id, side, spawnT: 1 });
     this.room.combat = true;
-    // carte « VS » d'introduction : le boss se matérialise pendant qu'elle s'affiche
+    // carte « VS » d'introduction : le boss se matérialise pendant qu'elle s'affiche,
+    // les joueurs sont figés et protégés, et jamais posés sur le boss
     for (const e of this.enemies) if (e.boss || e.link === head.id) e.spawnT = Math.max(e.spawnT || 0, 2.2);
-    for (const p of this.players) p.iframes = Math.max(p.iframes, 2.4);
+    this.introT = 2.2;
+    for (const p of this.players) {
+      p.iframes = Math.max(p.iframes, 2.6); p.vx = p.vy = 0;
+      for (const e of this.enemies) {
+        if (!e.boss || e.seg) continue;
+        const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy) || 1, need = e.r + p.r + 50;
+        if (d < need) { p.x = e.x + (dx / d) * need; p.y = e.y + (dy / d) * need; this.collide(p, p.fly ? 'fly' : 'walk'); }
+      }
+    }
     this.emit({ k: 'boss', name: head.name, look: bd.look, id: baseId, r: head.r, final: bd.final ? 1 : 0 });
   }
   spawnBossCopy(e, frac) {
@@ -742,6 +751,7 @@ export class Game {
   step(dt) {
     if (this.state !== 'playing') return;
     this.time += dt;
+    if (this.introT > 0) this.introT -= dt;
     if (this.pendingEnd) {
       this.pendingEnd.t -= dt;
       if (this.pendingEnd.t <= 0) { this.state = this.pendingEnd.state; this.emit({ k: this.state }); return; }
@@ -787,6 +797,8 @@ export class Game {
       p.buffs.haste = Math.max(0, p.buffs.haste - dt);
       p.buffs.shield = Math.max(0, p.buffs.shield - dt);
       let { mx, my, sx, sy } = p.input;
+      // pendant la carte « VS » du boss : on ne bouge pas et on ne tire pas
+      if (this.introT > 0) { mx = my = sx = sy = 0; }
       const ml = Math.hypot(mx, my);
       if (ml > 1) { mx /= ml; my /= ml; }
       const spd = p.stats.speed * (p.buffs.haste > 0 ? 1.3 : 1) * (p.roomBuff?.haste || 1) * (p.dead ? 1.1 : 1) * (p.charge > 0 && p.weapon === 'brim' ? 0.85 : 1);
@@ -1315,7 +1327,7 @@ export class Game {
       this.pendingEnd = { state: 'victory', t: 3 };
       return;
     }
-    this.room.trapdoor = { x: cx, y: cy + 10 };
+    this.room.trapdoor = { x: cx, y: cy + 10, readyAt: this.time + 2.5 };
     this.trapdoor = this.room.trapdoor;
     const owners = this.players.filter((p) => !p.away);
     if (owners.length <= 1) this.room.pickups.push(this.makePickup('item', cx, cy - 80, { item: this.rollItem('boss') }));
@@ -1753,7 +1765,14 @@ export class Game {
   checkTrapdoor() {
     if (!this.trapdoor || this.pendingEnd) return;
     const alive = this.alive();
-    for (const p of this.players) p.onTrap = !p.dead && Math.hypot(p.x - this.trapdoor.x, p.y - this.trapdoor.y) < 30;
+    const T = this.trapdoor;
+    const near = (p) => !p.dead && Math.hypot(p.x - T.x, p.y - T.y) < 30;
+    // la trappe s'ouvre 2,5 s après la mort du boss ; ceux qui sont déjà dessus doivent en sortir puis y revenir
+    if (T.readyAt && this.time < T.readyAt) { for (const p of this.players) { p.onTrap = false; if (near(p)) p.trapBlock = true; } return; }
+    for (const p of this.players) {
+      if (p.trapBlock && Math.hypot(p.x - T.x, p.y - T.y) > 44) p.trapBlock = false;
+      p.onTrap = near(p) && !p.trapBlock;
+    }
     if (alive.length && alive.every((p) => p.onTrap)) {
       this.descendT = 1.1;
       this.emit({ k: 'descend' });
@@ -1978,7 +1997,8 @@ export class Game {
       bombs: this.bombs.map((b) => [b.id, Math.round(b.x), Math.round(b.y), Math.round(b.t * 10) / 10, b.big ? 1 : 0]),
       spikes: this.spikesUp(),
       diff: this.difficulty, daily: this.daily,
-      trap: this.trapdoor,
+      intro: this.introT > 0 ? 1 : 0,
+      trap: this.trapdoor ? { x: this.trapdoor.x, y: this.trapdoor.y, open: !this.trapdoor.readyAt || this.time >= this.trapdoor.readyAt } : null,
       biome: this.biomeId,
       dyn: this.dynTiles(),
       desc: this.descendT > 0 ? Math.round((1 - this.descendT / 1.1) * 100) / 100 : 0,
@@ -1994,7 +2014,7 @@ export class Game {
     for (const [i, hp] of Object.entries(room.thp)) out.push([+i, room.tiles[+i], Math.ceil(hp)]);
     for (let i = 0; i < room.tiles.length; i++) {
       const t = room.tiles[i];
-      if (t === T_SPIKES) out.push([i, t, this.spikesUp() ? 1 : 0]);
+      if (t === T_SPIKES) out.push([i, t, this.spikesUp() ? 1 : !this.room.cleared && (this.time % 2.4) > 2.0 ? 2 : 0]); // 2 = elles vont sortir
       else if (t === T_TURRET) out.push([i, t, room.trap && room.trap[i] < 0.5 && !room.cleared ? 1 : 0]);
       else if (t === T_CRUMBLE) out.push([i, t, room.crumble && room.crumble[i] != null ? Math.round(room.crumble[i] * 10) : -1]);
     }

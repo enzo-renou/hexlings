@@ -67,12 +67,12 @@ export const AI = {
       e.state = 'idle';
       const [ux, uy] = g.pathDir(e, tgt);
       e.vx = ux * c.sp; e.vy = uy * c.sp;
-      if (e.cd <= 0 && c.dist < 280 && g.clearLine(e.x, e.y, tgt.x, tgt.y)) { e.state = 'wind'; e.t = 0.45; e.windup = true; e.ang = c.aim; }
+      if (e.cd <= 0 && c.dist < 280 && g.clearLine(e.x, e.y, tgt.x, tgt.y)) { e.state = 'wind'; e.t = g.hard ? 0.5 : 0.6; e.windup = true; e.ang = c.aim; }
     } else if (e.state === 'wind') {
       e.vx = e.vy = 0;
       if (e.t <= 0) { e.state = 'dash'; e.t = 0.5; e.windup = false; }
     } else if (e.state === 'dash') {
-      const s = (e.def.dash || 340) * slow;
+      const s = Math.min(e.def.dash || 340, g.hard ? 380 : 320) * slow;
       e.vx = Math.cos(e.ang) * s; e.vy = Math.sin(e.ang) * s;
       if (e.t <= 0 || e.wallHit) { e.state = 'rest'; e.t = 0.5; if (e.def.dashRing) { ringE(g, e, e.def.dashRing, e.def); g.emit({ k: 'eshoot', x: e.x, y: e.y }); } }
     } else {
@@ -84,7 +84,7 @@ export const AI = {
   charger(g, e, dt, tgt, slow, c) {
     const D = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     if (e.state === 'dash') {
-      const s = (e.def.dash || 320) * slow;
+      const s = Math.min(e.def.dash || 320, g.hard ? 380 : 320) * slow;
       e.vx = e.dirx * s; e.vy = e.diry * s;
       if (e.wallHit || e.t <= -1.5) { e.state = 'walk'; e.t = 0.4; }
       return;
@@ -424,17 +424,20 @@ export const BOSS_ATTACKS = {
     } else if (a.t > 1.6) X.finish();
   },
   charge(g, e, a, X, dt, slow) {
-    if (a.stage === 0) { e.windup = true; a.dir = X.aim; if (a.t > 0.6) { a.stage = 1; e.windup = false; a.t2 = 0; a.left = (a.times || 1) - 1; } }
+    // ruée : vitesse plafonnée et vrai temps d'annonce pour qu'on puisse l'esquiver
+    const spd = Math.min(a.spd, g.hard ? 400 : 340);
+    const wind = a.first === false ? (g.hard ? 0.5 : 0.65) : (g.hard ? 0.7 : 0.85);
+    if (a.stage === 0) { e.windup = true; a.dir = X.aim; if (a.t > wind) { a.stage = 1; e.windup = false; a.t2 = 0; if (a.left == null) a.left = (a.times || 1) - 1; } }
     else if (a.stage === 1) {
       a.t2 += dt;
-      e.vx = Math.cos(a.dir) * a.spd * slow; e.vy = Math.sin(a.dir) * a.spd * slow;
+      e.vx = Math.cos(a.dir) * spd * slow; e.vy = Math.sin(a.dir) * spd * slow;
       e.x += e.vx * dt; e.y += e.vy * dt;
       const hit = g.collide(e, 'walk') || g.atRoomEdge(e);
       if ((hit && a.t2 > 0.1) || a.t2 > 1.4) {
         e.vx = e.vy = 0;
         g.ring(e, a.n, 170, a.ang);
         g.emit({ k: 'slam', x: e.x, y: e.y });
-        if (a.left > 0) { a.left--; a.stage = 0; a.t = 0.2; } else { a.stage = 2; a.t3 = a.t; }
+        if (a.left > 0) { a.left--; a.stage = 0; a.t = 0; a.first = false; } else { a.stage = 2; a.t3 = a.t; }
       }
     } else if (a.t - a.t3 > 0.6) X.finish();
   },
@@ -545,5 +548,5 @@ export const BOSS_ATTACKS = {
     X.instant(() => { g.darkT = a.dur || 5; g.emit({ k: 'darkness', t: a.dur || 5 }); });
   },
   // plusieurs charges à la suite
-  dash3(g, e, a, X, dt, slow, tgt) { a.times = a.times || 3; BOSS_ATTACKS.charge(g, e, a, X, dt, slow, tgt); },
+  dash3(g, e, a, X, dt, slow, tgt) { a.times = g.hard ? (a.times || 3) : 2; BOSS_ATTACKS.charge(g, e, a, X, dt, slow, tgt); },
 };

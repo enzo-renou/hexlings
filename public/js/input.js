@@ -50,7 +50,8 @@ export const PAD_ACTIONS = [
   { id: 'emote3', label: 'Émote « ? »' },
   { id: 'emote4', label: 'Émote « ^^ »' },
 ];
-export const DEFAULT_PAD = { bomb: 5, orb: 4, potion: 6, spell: 7, map: 8, pause: 9, inv: 2, ping: 10, emote1: 12, emote2: 15, emote3: 13, emote4: 14 };
+// sac d'objets sur la flèche du haut de la croix (comme ça, X / Carré reste libre pour tirer)
+export const DEFAULT_PAD = { bomb: 5, orb: 4, potion: 6, spell: 7, map: 8, pause: 9, inv: 12, ping: 10, emote1: null, emote2: 15, emote3: 13, emote4: 14 };
 const PAD_NAMES = ['A (Croix)', 'B (Rond)', 'X (Carré)', 'Y (Triangle)', 'L1', 'R1', 'L2', 'R2', 'Select', 'Start', 'Clic G', 'Clic D', 'Flèche ↑', 'Flèche ↓', 'Flèche ←', 'Flèche →', 'Guide'];
 export const padLabel = (i) => (i == null ? '—' : PAD_NAMES[i] || 'Bouton ' + i);
 
@@ -175,7 +176,8 @@ export class Input {
     }
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
     const st = {
-      up: b(12) || ay < -0.6, down: b(13) || ay > 0.6, left: b(14) || ax < -0.6, right: b(15) || ax > 0.6,
+      // une flèche de la croix utilisée pour le sac ne sert pas aussi de direction dans les menus
+      up: (this.pad.inv !== 12 && b(12)) || ay < -0.6, down: (this.pad.inv !== 13 && b(13)) || ay > 0.6, left: (this.pad.inv !== 14 && b(14)) || ax < -0.6, right: (this.pad.inv !== 15 && b(15)) || ax > 0.6,
       ok: b(0), back: b(1), start: b(this.pad.pause), select: b(this.pad.inv),
     };
     const now = performance.now();
