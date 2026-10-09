@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hexlings — Les petits sorciers du donjon</title>
+  <meta name="description" content="Roguelike de petits sorciers, en solo ou jusqu'à 4 en ligne." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧙</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <!-- ÉCRAN TITRE -->
+    <div id="screen-title" class="screen">
+      <div class="wrap">
+        <header class="hero">
+          <div class="logo">HEX<span>LINGS</span></div>
+          <div class="tag">Les petits sorciers du donjon · solo ou jusqu'à 4 en ligne</div>
+        </header>
+
+        <div class="cols">
+          <section class="panel">
+            <h2>Choisis ton sorcier</h2>
+            <div id="chars" class="chars"></div>
+            <div id="char-info" class="char-info"></div>
+          </section>
+
+          <section class="panel play">
+            <label class="field">Pseudo
+              <input id="name" maxlength="16" placeholder="Merlinou" autocomplete="off" />
+            </label>
+            <button id="btn-solo" class="btn primary">▶ Jouer en solo</button>
+            <div class="sep"><span>multijoueur</span></div>
+            <button id="btn-create" class="btn">✦ Créer une partie</button>
+            <div class="join">
+              <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" />
+              <button id="btn-join" class="btn">Rejoindre</button>
+            </div>
+            <p id="title-msg" class="msg"></p>
+          </section>
+        </div>
+
+        <section class="panel">
+          <h2>Reliques <small id="slots"></small></h2>
+          <div id="relics" class="relics"></div>
+        </section>
+
+        <footer class="foot">
+          <span id="profile-stats"></span>
+          <span class="foot-btns">
+            <button id="btn-help" class="link">Commandes</button>
+            <button id="btn-save" class="link">Sauvegarde</button>
+            <button id="btn-mute" class="link">Son : oui</button>
+          </span>
+        </footer>
+      </div>
+    </div>
+
+    <!-- SALON MULTI -->
+    <div id="screen-lobby" class="screen hidden">
+      <div class="wrap narrow">
+        <div class="panel">
+          <h2>Salon de la partie</h2>
+          <p class="hint">Donne ce code à tes amis (4 sorciers maximum) :</p>
+          <div class="code-row"><div id="lobby-code" class="code">----</div><button id="btn-copy" class="btn small">Copier le lien</button></div>
+          <ul id="lobby-players" class="lobby-players"></ul>
+          <h3>Ton sorcier</h3>
+          <div id="lobby-chars" class="chars small"></div>
+          <div class="row">
+            <button id="btn-start" class="btn primary">Lancer la partie</button>
+            <button id="btn-leave" class="btn ghost">Quitter</button>
+          </div>
+          <p id="lobby-msg" class="msg"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAUSE -->
+    <div id="screen-pause" class="screen hidden dim">
+      <div class="panel center">
+        <h2 id="pause-title">Pause</h2>
+        <div id="pause-items" class="inv"></div>
+        <div class="row">
+          <button id="btn-resume" class="btn primary">Reprendre</button>
+          <button id="btn-quit" class="btn ghost">Abandonner la run</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FIN DE RUN -->
+    <div id="screen-end" class="screen hidden dim">
+      <div class="panel center end">
+        <h2 id="end-title">Fin</h2>
+        <p id="end-sub" class="hint"></p>
+        <div id="end-reward" class="reward hidden"></div>
+        <div id="end-stats" class="end-stats"></div>
+        <div class="row">
+          <button id="btn-again" class="btn primary">Rejouer</button>
+          <button id="btn-menu" class="btn ghost">Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODALES -->
+    <div id="modal-help" class="screen hidden dim">
+      <div class="panel center">
+        <h2>Commandes</h2>
+        <table class="keys">
+          <tr><td><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Se déplacer</td></tr>
+          <tr><td><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> ou clic gauche</td><td>Lancer des sorts</td></tr>
+          <tr><td><kbd>Espace</kbd> ou clic droit</td><td>Sort spécial (se recharge en nettoyant des salles)</td></tr>
+          <tr><td><kbd>Échap</kbd></td><td>Pause / menu</td></tr>
+          <tr><td><kbd>M</kbd></td><td>Couper le son</td></tr>
+          <tr><td>Manette</td><td>Stick gauche / stick droit / A</td></tr>
+        </table>
+        <p class="hint">Nettoie chaque salle pour ouvrir les portes. Trouve la salle au trésor ★, la boutique $ et le boss ☠.
+          En multi, <b>tout le monde doit se placer sur la même porte</b> pour changer de salle.
+          10 étages, un boss à chaque fin d'étage, un gros boss au 5 et au 10.</p>
+        <button class="btn primary close">OK</button>
+      </div>
+    </div>
+
+    <div id="modal-save" class="screen hidden dim">
+      <div class="panel center">
+        <h2>Sauvegarde</h2>
+        <p class="hint">Ta progression est enregistrée dans ce navigateur. Copie ce code pour la transférer ailleurs :</p>
+        <textarea id="save-out" readonly rows="3"></textarea>
+        <p class="hint">Coller un code pour l'importer :</p>
+        <textarea id="save-in" rows="3" placeholder="Colle ton code ici"></textarea>
+        <div class="row">
+          <button id="btn-import" class="btn">Importer</button>
+          <button id="btn-reset" class="btn ghost danger">Tout effacer</button>
+          <button class="btn primary close">Fermer</button>
+        </div>
+        <p id="save-msg" class="msg"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

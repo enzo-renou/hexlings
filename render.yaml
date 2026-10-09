@@ -1,0 +1,9 @@
+# Déploiement automatique sur Render (Blueprint)
+services:
+  - type: web
+    name: hexlings
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
