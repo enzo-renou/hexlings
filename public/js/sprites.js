@@ -23,8 +23,9 @@ export function mix(a, b, k) {
   return `rgb(${A[0] + (B[0] - A[0]) * k | 0},${A[1] + (B[1] - A[1]) * k | 0},${A[2] + (B[2] - A[2]) * k | 0})`;
 }
 export function rgba(h, a) { const c = hexToRgb(h); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; }
-const F = (c) => (FLASH ? mix(c, '#ffffff', FLASH) : c);
-export function setFlash(v) { FLASH = v; }
+let FLASH_C = '#ffffff';
+const F = (c) => (FLASH ? mix(c, FLASH_C, FLASH) : c);
+export function setFlash(v, col = '#ffffff') { FLASH = v; FLASH_C = col; }
 
 export function hash(x, y) { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 
@@ -524,8 +525,8 @@ export function lookFor(e, BOSSES) {
 }
 
 // e : ennemi du snapshot ; L : { tint, lx, ly, dx, dy, face }
-export function drawEnemyBody(ctx, look, x, y, r, e, t, L, flash = 0) {
-  setFlash(flash);
+export function drawEnemyBody(ctx, look, x, y, r, e, t, L, flash = 0, flashCol = '#ffffff') {
+  setFlash(flash, flashCol);
   (LOOKS[look] || LOOKS.slime)(ctx, x, y, r, e, t, L);
   setFlash(0);
 }
@@ -663,7 +664,7 @@ export function drawRock(g, px, py, style, B, h) {
 export function drawBombSprite(ctx, x, y, t, fuse = 1, big = false) {
   const r = big ? 11 : 9;
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ellipse(ctx, x, y + r, r, r * 0.35);
-  const blink = fuse < 0.6 && Math.floor(t * 16) % 2;
+  const blink = fuse > 0 && fuse < 0.6 && Math.floor(t * 16) % 2;
   ctx.fillStyle = blink ? '#ff3a3a' : big ? '#3a2a5a' : '#26222e';
   circle(ctx, x, y, r);
   ctx.fillStyle = blink ? '#ffb0b0' : '#5a5468'; circle(ctx, x - r * 0.35, y - r * 0.35, r * 0.3);

@@ -423,11 +423,44 @@ export class Game {
     return this.room.tiles[ty * ROOM_W + tx];
   }
   doorOpen() { return this.room.cleared; }
+  // Porte d'une salle fermée à clé alors que personne n'a de clé : on ne peut pas la franchir
+  lockedDirs() {
+    if (this._lkT === this.time && this._lkR === this.room) return this._lk;
+    const out = [];
+    if (this.fl && this.room.doors) {
+      const hasKey = this.players.some((p) => !p.dead && !p.away && p.keys > 0);
+      if (!hasKey) for (const d of DIR_NAMES) {
+        if (!this.room.doors[d]) continue;
+        const n = this.fl.get(this.room.gx + DIRS[d].dx, this.room.gy + DIRS[d].dy);
+        if (n && n.locked) out.push(d);
+      }
+    }
+    this._lkT = this.time; this._lkR = this.room; this._lk = out;
+    return out;
+  }
+  doorBlocked(tx, ty) {
+    const lk = this.lockedDirs();
+    if (!lk.length) return false;
+    for (const d of lk) if (DIRS[d].tx === tx && DIRS[d].ty === ty) return true;
+    return false;
+  }
+  // Les coffres dorés sont des objets solides tant qu'on n'a pas de clé pour les ouvrir
+  pushFromChests(p, pickups, keys) {
+    let bumped = null;
+    for (const pk of pickups) {
+      if (pk.taken || (pk.kind || pk.k) !== 'gchest' || keys > 0) continue;
+      const dx = p.x - pk.x, dy = p.y - (pk.y + 2), rr = p.r + 15, d = Math.hypot(dx, dy);
+      if (d >= rr) continue;
+      if (d < 0.01) { p.y += rr; } else { p.x = pk.x + (dx / d) * rr; p.y = pk.y + 2 + (dy / d) * rr; }
+      bumped = pk;
+    }
+    return bumped;
+  }
   solidFor(kind, tx, ty) {
     const t = this.tile(tx, ty);
     if (t === T_FLOOR) return false;
     if (t === T_WALL) return true;
-    if (t === T_DOOR) return !(kind === 'player' && this.doorOpen());
+    if (t === T_DOOR) return !(kind === 'player' && this.doorOpen() && !this.doorBlocked(tx, ty));
     if (t === T_SPIKES || t === T_CRUMBLE) return false;
     if (isDestructible(t) || t === T_TURRET) return kind === 'player' || kind === 'walk';
     if (kind === 'ghost') return false; // traverse rochers & fosses
@@ -591,6 +624,21 @@ export class Game {
         continue;
       }
       this.collide(p, 'player');
+      {
+        const pk = this.pushFromChests(p, this.room.pickups, p.keys);
+        if (pk) { this.collide(p, 'player'); if (!pk.warned || this.time - pk.warned > 2) { pk.warned = this.time; this.emit({ k: 'needkey', pid: p.id, x: pk.x, y: pk.y }); } }
+      }
+      // porte fermée à clé sans clé : petit message quand on la touche
+      {
+        const lk = this.lockedDirs();
+        for (const d of lk) {
+          const D = DIRS[d];
+          const cx = (D.tx + 0.5) * TILE, cy = (D.ty + 0.5) * TILE;
+          if (Math.abs(p.x - cx) < TILE * 0.5 + p.r + 4 && Math.abs(p.y - cy) < TILE * 0.5 + p.r + 4 && (!this.lockWarn || this.time - this.lockWarn > 2)) {
+            this.lockWarn = this.time; this.emit({ k: 'needkey', pid: p.id, x: p.x, y: p.y });
+          }
+        }
+      }
       // les feux brûlent au contact
       {
         const ptx = Math.floor(p.x / TILE), pty = Math.floor(p.y / TILE);
@@ -1106,7 +1154,7 @@ export class Game {
   damageEnemy(e, dmg, pid, noFlash = false) {
     if (e.dead || e.airborne || e.inv) return;
     e.hp -= dmg;
-    if (!noFlash) e.hitT = 0.08;
+    if (!noFlash) e.hitT = 0.13;
     if (pid) e.lastHitBy = pid;
     if (e.hp <= 0) this.killEnemy(e, pid);
   }
@@ -1660,7 +1708,7 @@ export class Game {
     return {
       t: this.time, seed: this.seed, floor: this.floor, state: this.state, freeze: this.freezeT > 0,
       roomVer: this.roomVer,
-      room: { gx: room.gx, gy: room.gy, type: room.type, cleared: room.cleared, tiles: room.tiles, doors: room.doors },
+      room: { gx: room.gx, gy: room.gy, type: room.type, cleared: room.cleared, tiles: room.tiles, doors: room.doors, lk: this.lockedDirs() },
       map: this.mapView(),
       players: this.players.map((p) => ({
         id: p.id, name: p.name, c: p.charId, x: r1(p.x), y: r1(p.y), fx: r1(p.fx), fy: r1(p.fy),

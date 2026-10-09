@@ -1,0 +1,21 @@
+# Tests automatiques : à chaque « git push », GitHub vérifie que le jeu ne plante pas
+# (mécaniques une par une + 12 runs complètes simulées de 1 à 4 joueurs).
+name: Tests
+on:
+  push:
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Le serveur démarre
+        run: |
+          (PORT=3456 node server.js &) && sleep 3
+          curl -sf http://localhost:3456/health

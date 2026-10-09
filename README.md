@@ -32,8 +32,9 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 | E | Poser une bombe |
 | F | Signaler (« par ici ! ») |
 | Tab (maintenir) | Carte de l'étage |
+| B (ou le bouton 🎒 sous les stats) | Inventaire : tes objets et ce qu'ils font |
 | Échap ou ⚙ | Paramètres : volumes, touches, plein écran, abandon de la run |
-| Manette | Stick gauche / stick droit ou A-B-X-Y / gâchettes |
+| Manette | Stick gauche = bouger · stick droit ou A/B/X/Y = tirer · RB/RT = sort · LB = bombe · LT = signaler · croix haut = carte · Select = inventaire · Start = paramètres · menus navigables à la croix (A valide, B revient) |
 
 ## Lancer en local
 

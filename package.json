@@ -1,6 +1,6 @@
 {
   "name": "hexlings",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "Hexlings — roguelike de petits sorciers, solo ou jusqu'à 4 en ligne",
   "type": "module",
   "main": "server.js",

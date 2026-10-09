@@ -1,12 +1,14 @@
 // Prédiction côté client (multi) : ton sorcier bouge tout de suite quand tu appuies,
 // sans attendre la réponse du serveur. On se recale doucement sur le serveur ensuite.
 import { Game } from '/shared/game.js';
-import { TILE, VIEW_W, VIEW_H } from '/shared/constants.js';
+import { TILE, VIEW_W, VIEW_H, DIRS } from '/shared/constants.js';
 
 const fake = {
   room: { tiles: null }, cleared: false,
   tile: Game.prototype.tile, solidFor: Game.prototype.solidFor,
   doorOpen() { return this.cleared; },
+  lk: [],
+  doorBlocked(tx, ty) { return this.lk.some((d) => DIRS[d].tx === tx && DIRS[d].ty === ty); },
 };
 
 export class Predictor {
@@ -35,7 +37,9 @@ export class Predictor {
     } else {
       fake.room.tiles = latest.room.tiles;
       fake.cleared = latest.room.cleared;
+      fake.lk = latest.room.lk || [];
       Game.prototype.collide.call(fake, p, 'player');
+      if (Game.prototype.pushFromChests(p, latest.pickups || [], me.keys)) Game.prototype.collide.call(fake, p, 'player');
     }
     // recalage sur la position du serveur
     const ex = me.x - p.x, ey = me.y - p.y, err = Math.hypot(ex, ey);

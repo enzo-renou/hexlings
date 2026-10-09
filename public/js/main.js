@@ -8,6 +8,7 @@ import { dailySeed, todayKey } from '/shared/rng.js';
 import { Predictor } from './predict.js';
 import { renderTalents, renderCodex, renderLeaderboard, renderAccount, wireAccount } from './screens.js';
 import { playIntro } from './intro.js';
+import { renderInventory } from './inventory.js';
 import { BIOMES } from '/shared/biomes.js';
 import { Renderer } from './render.js';
 import { drawPixelWizard } from './sprites.js';
@@ -34,8 +35,9 @@ function refreshKeyNames() {
   renderer.keyNames = {
     move: [b.up, b.left, b.down, b.right].map(keyLabel).join(''),
     shoot: [b.shootUp, b.shootLeft, b.shootDown, b.shootRight].map(keyLabel).join(' '),
-    spell: keyLabel(b.spell), bomb: keyLabel(b.bomb), map: keyLabel(b.map),
+    spell: keyLabel(b.spell), bomb: keyLabel(b.bomb), map: keyLabel(b.map), inv: keyLabel(b.inv),
   };
+  const ik = document.querySelector('#inv-key'); if (ik) ik.textContent = keyLabel(b.inv);
 }
 refreshKeyNames();
 setTimeout(refreshKeyNames, 500);
@@ -46,6 +48,7 @@ let net = null;       // connexion (multi)
 let lobby = null;
 let inGame = false;
 let paused = false;
+let invOpen = false;
 let ended = false;
 let acc = 0;
 let lastT = performance.now();
@@ -58,10 +61,10 @@ const predictor = new Predictor();
 let runAch = [];        // succès gagnés pendant la run
 
 // ---------------------------------------------------------- écrans
-const screens = ['#screen-title', '#screen-lobby', '#modal-settings', '#screen-end', '#modal-save', '#screen-talents', '#screen-codex', '#screen-leaderboard', '#modal-account', '#screen-intro'];
+const screens = ['#screen-title', '#screen-lobby', '#modal-settings', '#screen-end', '#modal-save', '#screen-talents', '#screen-codex', '#screen-leaderboard', '#modal-account', '#screen-intro', '#modal-inv'];
 let currentScreen = '#screen-title';
 function show(id) {
-  if (id !== '#modal-settings') currentScreen = id;
+  if (id !== '#modal-settings' && id !== '#modal-inv') currentScreen = id;
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
   document.body.classList.toggle('playing', inGame);
 }
@@ -439,7 +442,7 @@ function endRun(snap, meId) {
 function quitToMenu() {
   audio.music(null); musicBiome = null;
   if (mode === 'multi' && net) { net.leave(); lobby = null; }
-  mode = null; game = null; inGame = false; paused = false; ended = false; settingsOpen = false;
+  mode = null; game = null; inGame = false; paused = false; ended = false; settingsOpen = false; invOpen = false;
   renderTitle();
   show('#screen-title');
 }
@@ -479,7 +482,27 @@ function renderKeys() {
     tb.appendChild(tr);
   }
 }
+// ---------------------------------------------------------- inventaire (touche B / bouton Select)
+function openInv() {
+  if (!inGame || ended || settingsOpen) return;
+  invOpen = true;
+  if (mode === 'solo') paused = true;
+  const me = lastSnap && lastSnap.players.find((p) => p.id === (mode === 'multi' ? net.id : 'local'));
+  renderInventory($('#inv-body'), me, meta.equippedRelics());
+  $('#inv-close-key').textContent = `(${keyLabel(input.bind.inv)})`;
+  show('#modal-inv');
+  audio.play('pickup');
+}
+function closeInv() {
+  if (!invOpen) return;
+  invOpen = false;
+  paused = false;
+  show(ended ? '#screen-end' : null);
+}
+function toggleInv() { if (invOpen) closeInv(); else openInv(); }
+
 function openSettings() {
+  if (invOpen) closeInv();
   settingsOpen = true;
   if (inGame && mode === 'solo' && !ended) paused = true;
   const st = meta.data.settings;
@@ -518,11 +541,97 @@ function placeGear() {
     gear.style.width = gear.style.height = sz + 'px';
     gear.style.fontSize = Math.round(sz * 0.6) + 'px';
   } else { gear.style.left = gear.style.top = '12px'; gear.style.width = gear.style.height = '44px'; gear.style.fontSize = '24px'; }
+  // bouton inventaire : sous le panneau des stats (en bas à gauche)
+  const ib = $('#btn-inv');
+  const showInv = inGame && !ended && !settingsOpen && !invOpen;
+  ib.classList.toggle('hidden', !showInv);
+  if (showInv) {
+    const r = canvas.getBoundingClientRect();
+    const k = r.width / 720;
+    ib.style.left = Math.round(r.left + 2 * k) + 'px';
+    ib.style.top = Math.round(r.top + 364 * k) + 'px';
+    ib.style.width = Math.round(46 * k) + 'px';
+    ib.style.height = Math.round(28 * k) + 'px';
+    ib.style.fontSize = Math.round(17 * k) + 'px';
+  }
+}
+
+// ---------------------------------------------------------- manette dans les menus
+const FOCUSABLE = 'button, input, select, .inv-row';
+function topScreen() {
+  for (const id of ['#modal-inv', '#modal-settings', '#screen-intro', '#screen-end', '#modal-save', '#modal-account', '#screen-talents', '#screen-codex', '#screen-leaderboard', '#screen-lobby', '#screen-title']) {
+    const el = $(id);
+    if (el && !el.classList.contains('hidden')) return el;
+  }
+  return null;
+}
+let padEl = null;
+function padFocus(el) {
+  if (padEl) padEl.classList.remove('padfocus');
+  padEl = el;
+  if (!el) return;
+  el.classList.add('padfocus');
+  if (el.matches('.inv-row')) el.setAttribute('tabindex', '-1');
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: 'nearest' });
+}
+function padMove(scr, dir) {
+  const els = [...scr.querySelectorAll(FOCUSABLE)].filter((e) => e.offsetParent !== null && !e.disabled && !e.closest('.hidden'));
+  if (!els.length) return;
+  if (!padEl || !els.includes(padEl)) { padFocus((scr.id !== 'modal-settings' && els.find((e) => e.classList.contains('primary'))) || els[0]); return; }
+  if (padEl.type === 'range' && (dir === 'left' || dir === 'right')) {
+    padEl.value = Number(padEl.value) + (dir === 'right' ? 5 : -5);
+    padEl.dispatchEvent(new Event('input')); padEl.dispatchEvent(new Event('change'));
+    return;
+  }
+  const a = padEl.getBoundingClientRect();
+  const ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+  const [dx, dy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
+  let best = null, bestS = Infinity;
+  for (const e of els) {
+    if (e === padEl) continue;
+    const b = e.getBoundingClientRect();
+    const bx = b.left + b.width / 2, by = b.top + b.height / 2;
+    const along = (bx - ax) * dx + (by - ay) * dy;
+    if (along <= 4) continue;
+    const across = Math.abs((bx - ax) * dy + (by - ay) * dx);
+    const sc = along + across * 2.5;
+    if (sc < bestS) { bestS = sc; best = e; }
+  }
+  if (best) padFocus(best);
+}
+function handlePad() {
+  const evs = input.pollPad();
+  if (!evs.length) return;
+  const playing = inGame && !ended && !settingsOpen && !invOpen;
+  for (const ev of evs) {
+    if (ev === 'start') { if (inGame && !ended) { if (invOpen) closeInv(); togglePause(); } else if (topScreen()?.id === 'screen-intro') $('#btn-skip').click(); continue; }
+    if (ev === 'select') { if (inGame && !ended && !settingsOpen) toggleInv(); continue; }
+    if (playing) continue; // en jeu, les boutons servent à tirer
+    const scr = topScreen();
+    if (!scr) continue;
+    if (scr.id === 'screen-intro') { if (ev === 'ok' || ev === 'back') $('#btn-skip').click(); continue; }
+    if (ev === 'back') {
+      if (invOpen) closeInv();
+      else if (settingsOpen) closeSettings();
+      else scr.querySelector('.close')?.click();
+      continue;
+    }
+    if (ev === 'ok') {
+      if (!padEl || !scr.contains(padEl) || padEl.offsetParent === null) { padMove(scr, 'down'); continue; }
+      if (padEl.matches('.inv-row')) continue;
+      padEl.click();
+      continue;
+    }
+    padMove(scr, ev);
+  }
 }
 
 // ---------------------------------------------------------- boucle
 function frame(now) {
   placeGear();
+  handlePad();
+  if (input.consume('inv')) toggleInv();
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   if (inGame && mode === 'solo' && game) {
@@ -604,6 +713,8 @@ $('#btn-copy').onclick = () => {
   navigator.clipboard?.writeText(url).then(() => ($('#lobby-msg').textContent = 'Lien copié : ' + url), () => ($('#lobby-msg').textContent = url));
 };
 $('#btn-resume').onclick = closeSettings;
+$('#btn-inv').onclick = () => { audio.unlock(); openInv(); };
+$('#btn-inv-close').onclick = closeInv;
 $('#btn-settings').onclick = () => { audio.unlock(); togglePause(); };
 $('#vol-sfx').oninput = (e) => { meta.data.settings.sfx = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
 $('#vol-sfx').onchange = () => audio.play('coin');
@@ -635,6 +746,7 @@ $('#btn-reset').onclick = () => {
 };
 document.querySelectorAll('.close').forEach((b) => (b.onclick = () => { renderTitle(); show('#screen-title'); }));
 addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && !input.capture && invOpen) { closeInv(); return; }
   if (e.code === 'Escape' && !input.capture && (inGame || settingsOpen)) togglePause();
   if (e.code === 'KeyM' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { audio.setMuted(!audio.muted); meta.data.muted = audio.muted; meta.save(); }
   if (e.code === 'KeyN' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { audio.setMusicMuted(!audio.musicMuted); meta.data.musicMuted = audio.musicMuted; meta.save(); }

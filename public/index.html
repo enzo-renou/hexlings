@@ -13,6 +13,7 @@
 </head>
 <body>
   <button id="btn-settings" class="gear" title="Paramètres (Échap)">⚙</button>
+  <button id="btn-inv" class="invbtn hidden" title="Inventaire (B)">🎒<span id="inv-key">B</span></button>
   <div id="loading" class="loading">
     <div class="logo">HEX<span>LINGS</span></div>
     <div class="bar"><div id="load-bar"></div></div>
@@ -117,7 +118,7 @@
         <section>
           <h3>Commandes <small class="hint">— clique sur une touche pour la changer</small></h3>
           <table id="keys-table" class="keys"></table>
-          <p class="hint small">Manette : stick gauche pour bouger, stick droit ou boutons A/B/X/Y pour tirer, gâchettes pour le sort.</p>
+          <p class="hint small">Manette : stick gauche = bouger · stick droit ou A/B/X/Y = tirer · RB/RT = sort · LB = bombe · LT = signaler · croix haut (maintenir) = carte · Select = inventaire · Start = paramètres. Dans les menus : croix/stick pour se déplacer, A pour valider, B pour revenir.</p>
           <button id="btn-keys-reset" class="btn small">Touches par défaut</button>
         </section>
         <section>
@@ -133,6 +134,17 @@
         <div class="row">
           <button id="btn-resume" class="btn primary">Reprendre</button>
           <button id="btn-quit" class="btn ghost danger">Abandonner la run</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- INVENTAIRE -->
+    <div id="modal-inv" class="screen hidden dim">
+      <div class="panel center settings invpanel">
+        <h2>🎒 Inventaire</h2>
+        <div id="inv-body"></div>
+        <div class="row">
+          <button id="btn-inv-close" class="btn primary">Fermer <small id="inv-close-key">(B)</small></button>
         </div>
       </div>
     </div>

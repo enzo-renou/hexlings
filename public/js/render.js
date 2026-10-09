@@ -13,9 +13,9 @@ import { pixelize, quantizeDark, paintRoom } from './pixel.js';
 
 export { drawWizard, drawHeart };
 
-const R = 0.5;                 // 1 pixel « rétro » = 2 unités du jeu
-const AW = VIEW_W * R, AH = VIEW_H * R; // 360 x 216 pixels
-const MS = 4;                  // agrandissement à l'écran (pixels nets)
+const R = 1;                   // 1 pixel « rétro » = 1 unité du jeu (plus net)
+const AW = VIEW_W * R, AH = VIEW_H * R; // 720 x 432 pixels
+const MS = 2;                  // agrandissement à l'écran (pixels nets)
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -55,11 +55,12 @@ export class Renderer {
     this.bg = mk(AW, AH);
     this.dec = mk(AW, AH, true);
     this.ent = mk(AW, AH, true);
-    this.fx = mk(AW, AH, true);
-    this.light = mk(AW, AH, true);
+    this.fx = mk(AW / 2, AH / 2, true);    // effets : demi-résolution (grain rétro, plus rapide)
+    this.light = mk(AW / 2, AH / 2, true); // éclairage : demi-résolution
     this.world = mk(AW, AH);
     this.prev = mk(AW, AH);
     this.hud = mk(VIEW_W, VIEW_H, true);
+    this.ovl = mk(VIEW_W, VIEW_H, true); // messages semi-transparents
     this.tmp = mk(AW, AH, true);
     this.lctx = this.light.ctx;
     this.shakeOn = true;
@@ -193,7 +194,7 @@ export class Renderer {
       case 'eshoot': this.ring(ev.x, ev.y, 18, '#ff6a9a', 0.15, 2); break;
       case 'phase': this.shake = 16; this.flashC = { c: '#ff3a3a', a: 0.35 }; this.banner = { title: 'Le boss s’énerve !', sub: '', life: 1.6, color: '#ff6a6a' }; break;
       case 'floor':
-        this.banner = { title: `Étage ${ev.n}`, sub: ev.name, life: 2.8, color: '#e9dcff' };
+        this.banner = { title: `Étage ${ev.n}`, sub: ev.name, life: 2.8, color: '#e9dcff', floor: true };
         this.iris = { t: 0, dur: 1.1 };
         this.trans = null;
         this.decals = []; this.decalsDirty = true; this.trails.clear(); this.ambient = [];
@@ -233,7 +234,7 @@ export class Renderer {
 
   toast(title, sub, color, glyph = '', small = false) {
     this.toasts.push({ title, sub, color, glyph, small, life: small ? 2.4 : 3.2, max: small ? 2.4 : 3.2 });
-    if (this.toasts.length > 3) this.toasts.shift();
+    if (this.toasts.length > 2) this.toasts.shift();
   }
 
   // -------------------------------------------------- fond de la salle (pixel art, mis en cache)
@@ -243,7 +244,11 @@ export class Renderer {
     const seed = snap.room.gx * 31 + snap.room.gy * 17 + snap.floor * 101;
     const g = this.bg.ctx;
     g.setTransform(1, 0, 0, 1, 0, 0);
-    paintRoom(g, B, tiles, AW, AH, TILE * R, ROOM_W, ROOM_H, seed);
+    // sol et murs texturés peints en basse résolution (grain « donjon rétro »), puis agrandis
+    if (!this.lowBg) { this.lowBg = document.createElement('canvas'); this.lowBg.width = VIEW_W / 2; this.lowBg.height = VIEW_H / 2; }
+    paintRoom(this.lowBg.getContext('2d'), B, tiles, VIEW_W / 2, VIEW_H / 2, TILE / 2, ROOM_W, ROOM_H, seed);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(this.lowBg, 0, 0, AW, AH);
     const rx = snap.room.gx * 31 + snap.floor * 7, ry = snap.room.gy * 17;
     // 1) décor plat (tapis, cercles runiques, fleurs...) : tramé, sans contour
     const t = this.tmp.ctx;
@@ -598,7 +603,9 @@ export class Renderer {
     if (look === 'slime' && moving) { const w = Math.abs(Math.sin(this.t * 7 + e.id)); sy = 0.85 + w * 0.25; sx = 1.12 - w * 0.18; }
     if (e.hit) { sx *= 1.18; sy *= 0.84; }
     if (e.w) { const p = Math.sin(this.t * 30) * 0.06; sx *= 1.08 + p; sy *= 0.92 - p; }
-    const x = e.x, y = e.y - z - hover;
+    // touché : petit tremblement + teinte rouge bien visible (même sur les squelettes tout blancs)
+    const jit = e.hit ? (Math.random() - 0.5) * 4 : 0;
+    const x = e.x + jit, y = e.y - z - hover;
     const foot = y + r * 0.8;
     c.translate(x, foot); c.scale(sx * sc, sy * sc); c.translate(-x, -foot);
     if (e.ch && CHAMPIONS[e.ch]) {
@@ -607,7 +614,7 @@ export class Renderer {
       c.beginPath(); c.ellipse(x, y + r * 0.2, r * 1.25, r * 1.1, 0, 0, TAU); c.stroke();
       c.globalAlpha = e.sp ? 1 - Math.min(1, e.sp / 0.6) : 1;
     }
-    drawEnemyBody(c, look, x, y, r, e, this.t, L, e.hit ? 0.75 : (e.ch ? 0.18 : 0));
+    drawEnemyBody(c, look, x, y, r, e, this.t, L, e.hit ? 0.62 : (e.ch ? 0.18 : 0), e.hit ? '#ff3a3a' : '#ffffff');
     if (e.ch && CHAMPIONS[e.ch]) { c.globalAlpha = 0.35; c.fillStyle = CHAMPIONS[e.ch].color; c.beginPath(); c.arc(x, y, r * 0.9, 0, TAU); c.fill(); }
     c.restore();
     if (e.sl) { c.fillStyle = 'rgba(140,220,255,0.22)'; c.beginPath(); c.arc(x, y, r * 1.05, 0, TAU); c.fill(); if (Math.random() < 0.1) this.parts.push({ x: x + (Math.random() - 0.5) * r * 2, y: y - r, vx: 0, vy: 15, life: 0.6, max: 0.6, color: '#dff6ff', size: 2 }); }
@@ -804,10 +811,10 @@ export class Renderer {
     const dark = B.dark * (snap.room.cleared ? 0.8 : 0.95);
     L.setTransform(1, 0, 0, 1, 0, 0);
     L.globalCompositeOperation = 'source-over';
-    L.clearRect(0, 0, AW, AH);
+    L.clearRect(0, 0, AW / 2, AH / 2);
     L.fillStyle = `rgba(0,0,0,${dark})`;
-    L.fillRect(0, 0, AW, AH);
-    L.setTransform(R, 0, 0, R, 0, 0);
+    L.fillRect(0, 0, AW / 2, AH / 2);
+    L.setTransform(R / 2, 0, 0, R / 2, 0, 0);
     L.globalCompositeOperation = 'destination-out';
     for (const l of lights) {
       const g = L.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r);
@@ -815,7 +822,7 @@ export class Renderer {
       L.fillStyle = g; L.beginPath(); L.arc(l.x, l.y, l.r, 0, TAU); L.fill();
     }
     L.globalCompositeOperation = 'source-over';
-    quantizeDark(L, AW, AH, 6);
+    quantizeDark(L, AW / 2, AH / 2, 6);
   }
 
   // -------------------------------------------------- rendu principal
@@ -837,7 +844,7 @@ export class Renderer {
     }
     this.texts = [];
     const lights = [];
-    const prep = (cv) => { const g = cv.ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, AW, AH); g.setTransform(R, 0, 0, R, 0, 0); return g; };
+    const prep = (cv) => { const g = cv.ctx, k = cv.width / AW; g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, cv.width, cv.height); g.setTransform(R * k, 0, 0, R * k, 0, 0); return g; };
     const E = prep(this.ent);   // entités : contour sombre
     const X = prep(this.fx);    // effets : tramés, sans contour
 
@@ -941,8 +948,8 @@ export class Renderer {
     }
     this.floats = this.floats.filter((f) => f.life > 0);
 
-    pixelize(E, AW, AH, { outline: true });
-    pixelize(X, AW, AH, { outline: false, solid: 0.6 });
+    pixelize(E, AW, AH, { outline: true, solid: 0.45, dither: false });
+    pixelize(X, AW / 2, AH / 2, { outline: false, solid: 0.6 });
     this.applyLighting(B, lights, snap);
 
     // -------- composition du monde en basse résolution
@@ -955,8 +962,9 @@ export class Renderer {
     W.drawImage(this.bg, shx, shy);
     W.drawImage(this.dec, shx, shy);
     W.drawImage(this.ent, shx, shy);
-    W.drawImage(this.fx, shx, shy);
-    W.drawImage(this.light, 0, 0);
+    W.imageSmoothingEnabled = false;
+    W.drawImage(this.fx, shx, shy, AW, AH);
+    W.drawImage(this.light, 0, 0, AW, AH);
     if (snap.freeze) { W.fillStyle = 'rgba(120,180,255,0.16)'; W.fillRect(0, 0, AW, AH); }
     if (this.flashC) { W.fillStyle = rgba(this.flashC.c, Math.max(0, this.flashC.a)); W.fillRect(0, 0, AW, AH); this.flashC.a -= dt * 1.2; if (this.flashC.a <= 0) this.flashC = null; }
     if (this.flashW > 0) { W.fillStyle = `rgba(255,255,255,${this.flashW})`; W.fillRect(0, 0, AW, AH); this.flashW -= dt; }
@@ -967,7 +975,7 @@ export class Renderer {
       const k = ease(clamp01(this.iris.t / this.iris.dur));
       const cx = (me ? me.x : VIEW_W / 2) * R, cy = (me ? me.y - 10 : VIEW_H / 2) * R;
       // iris en « escalier » de pixels
-      const rad = k * 420;
+      const rad = k * 840 * R;
       W.fillStyle = '#000';
       for (let y = 0; y < AH; y += 2) {
         const dy = y + 1 - cy;
@@ -1006,6 +1014,10 @@ export class Renderer {
     pixelize(H, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
     if (this.showMap) { m.fillStyle = 'rgba(8,5,14,0.72)'; m.fillRect(0, 0, SW, SH); }
     m.drawImage(this.hud, 0, 0, SW, SH);
+    if (this.ovlUsed) {
+      pixelize(this.ovl.ctx, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
+      m.globalAlpha = 0.62; m.drawImage(this.ovl, 0, 0, SW, SH); m.globalAlpha = 1;
+    }
   }
 
   drawWorldTexts(H, ox, oy) {
@@ -1031,7 +1043,7 @@ export class Renderer {
     H.fillText(`${k.move || 'ZQSD'} : se déplacer`, VIEW_W / 2, 112);
     const shoot = /[↑↓←→]/.test(k.shoot || '↑') ? 'Flèches' : k.shoot;
     H.fillText(`${shoot} : lancer des sorts (haut, bas, gauche, droite)`, VIEW_W / 2, 132);
-    H.fillText(`${k.spell || 'Espace'} : sort spécial  ·  ${k.bomb || 'E'} : bombe  ·  ${k.map || 'Tab'} : carte  ·  Échap : paramètres`, VIEW_W / 2, 316);
+    H.fillText(`${k.spell || 'Espace'} : sort spécial  ·  ${k.bomb || 'E'} : bombe  ·  ${k.map || 'Tab'} : carte  ·  ${k.inv || 'B'} : objets  ·  Échap : paramètres`, VIEW_W / 2, 316);
     H.fillText('Casse les crottes et les vases, et fais sauter les murs fissurés...', VIEW_W / 2, 336);
     H.globalAlpha = 1;
   }
@@ -1171,47 +1183,64 @@ export class Renderer {
       }
     }
 
-    // bannière d'étage / boss
+    // Messages : la bannière d'étage reste au centre sur fond noir ; les autres messages
+    // sont plus petits, en haut de l'écran et semi-transparents (dessinés sur this.ovl).
+    const O = this.ovl.ctx;
+    O.setTransform(1, 0, 0, 1, 0, 0); O.globalAlpha = 1; O.clearRect(0, 0, VIEW_W, VIEW_H);
+    this.ovlUsed = false;
+    let topY = 50;
     if (this.banner) {
       const b = this.banner;
       b.life -= dt;
       if (b.max == null) b.max = b.life + dt;
       const a = Math.max(0, Math.min(1, b.life * 2, (b.max - b.life) * 4));
       const slide = Math.round((1 - Math.min(1, (b.max - b.life) * 4)) * 40);
-      ctx.globalAlpha = a > 0.5 ? 1 : 0;
-      const by = VIEW_H / 2 - 40;
-      ctx.fillStyle = '#0c0814'; ctx.fillRect(40, by, VIEW_W - 80, 70);
-      ctx.fillStyle = '#7a6236'; ctx.fillRect(40, by, VIEW_W - 80, 2); ctx.fillRect(40, by + 68, VIEW_W - 80, 2);
-      ctx.fillStyle = '#c8a45a'; ctx.fillRect(40, by + 4, VIEW_W - 80, 1); ctx.fillRect(40, by + 65, VIEW_W - 80, 1);
-      ctx.textAlign = 'center';
-      if (b.sub) { ctx.font = `14px ${FONT}`; ctx.fillStyle = b.boss ? '#ff5a6a' : '#b8a8d8'; ctx.fillText(b.sub.toUpperCase(), VIEW_W / 2 - slide, by + 22); }
-      ctx.font = `bold 28px ${FONT}`; ctx.fillStyle = b.color; ctx.fillText(b.title, VIEW_W / 2 + slide, by + 54);
-      ctx.globalAlpha = 1;
+      if (a > 0.5) {
+        if (b.floor) {
+          const by = VIEW_H / 2 - 40;
+          ctx.fillStyle = '#0c0814'; ctx.fillRect(40, by, VIEW_W - 80, 70);
+          ctx.fillStyle = '#7a6236'; ctx.fillRect(40, by, VIEW_W - 80, 2); ctx.fillRect(40, by + 68, VIEW_W - 80, 2);
+          ctx.fillStyle = '#c8a45a'; ctx.fillRect(40, by + 4, VIEW_W - 80, 1); ctx.fillRect(40, by + 65, VIEW_W - 80, 1);
+          ctx.textAlign = 'center';
+          if (b.sub) { ctx.font = `14px ${FONT}`; ctx.fillStyle = '#b8a8d8'; ctx.fillText(b.sub.toUpperCase(), VIEW_W / 2 - slide, by + 22); }
+          ctx.font = `bold 28px ${FONT}`; ctx.fillStyle = b.color; ctx.fillText(b.title, VIEW_W / 2 + slide, by + 54);
+        } else {
+          this.ovlUsed = true;
+          O.textAlign = 'center';
+          O.font = `bold 20px ${FONT}`;
+          const w = Math.max(O.measureText(b.title).width, 120) + 40, h = b.sub ? 44 : 32;
+          const x = VIEW_W / 2 - w / 2, y = topY;
+          this.frame(O, x, y, w, h, { bg: '#0c0814' });
+          if (b.sub) { O.font = `11px ${FONT}`; O.fillStyle = b.boss ? '#ff5a6a' : '#b8a8d8'; O.fillText(b.sub.toUpperCase(), VIEW_W / 2 - slide, y + 15); }
+          O.font = `bold 20px ${FONT}`; O.fillStyle = b.color; O.fillText(b.title, VIEW_W / 2 + slide, y + (b.sub ? 36 : 23));
+          topY += h + 6;
+        }
+      }
       if (b.life <= 0) this.banner = null;
     }
 
-    // annonces d'objets : parchemin
-    let ty = 30;
+    // annonces d'objets : petit parchemin en haut, semi-transparent
+    let ty = topY;
     for (const t of this.toasts) {
       t.life -= dt;
       const a = Math.max(0, Math.min(1, t.life * 2, (t.max - t.life) * 5));
       if (a < 0.3) continue;
-      ctx.textAlign = 'center';
+      this.ovlUsed = true;
+      O.textAlign = 'center';
       const title = (t.glyph ? t.glyph + ' ' : '') + t.title;
-      ctx.font = `bold ${t.small ? 15 : 19}px ${FONT}`;
-      const w1 = ctx.measureText(title).width;
-      ctx.font = `${t.small ? 12 : 14}px ${FONT}`;
-      const w = Math.max(w1, ctx.measureText(t.sub).width) + 40;
-      const h = t.small ? 40 : 50;
+      O.font = `bold ${t.small ? 13 : 15}px ${FONT}`;
+      const w1 = O.measureText(title).width;
+      O.font = `${t.small ? 11 : 12}px ${FONT}`;
+      const w = Math.min(VIEW_W - 260, Math.max(w1, O.measureText(t.sub).width) + 30);
+      const h = t.small ? 34 : 40;
       const x = VIEW_W / 2 - w / 2;
-      this.frame(ctx, x, ty, w, h, { bg: '#e8d8b0', border: '#5a3a1a', hi: '#fff4d8' });
-      ctx.fillStyle = '#c8b088'; ctx.fillRect(Math.round(x) + 3, ty + h - 6, Math.round(w) - 6, 3);
-      ctx.fillStyle = '#5a3a1a'; ctx.fillRect(Math.round(x) - 6, ty + 6, 6, h - 12); ctx.fillRect(Math.round(x + w), ty + 6, 6, h - 12);
-      ctx.font = `bold ${t.small ? 15 : 19}px ${FONT}`; ctx.fillStyle = '#3a1a0a';
-      ctx.fillText(title, VIEW_W / 2, ty + (t.small ? 18 : 22));
-      ctx.font = `${t.small ? 12 : 14}px ${FONT}`; ctx.fillStyle = '#6a4a2a';
-      ctx.fillText(t.sub, VIEW_W / 2, ty + (t.small ? 33 : 41));
-      ty += h + 8;
+      this.frame(O, x, ty, w, h, { bg: '#e8d8b0', border: '#5a3a1a', hi: '#fff4d8' });
+      O.fillStyle = '#5a3a1a'; O.fillRect(Math.round(x) - 5, ty + 5, 5, h - 10); O.fillRect(Math.round(x + w), ty + 5, 5, h - 10);
+      O.font = `bold ${t.small ? 13 : 15}px ${FONT}`; O.fillStyle = '#3a1a0a';
+      O.fillText(title, VIEW_W / 2, ty + (t.small ? 15 : 17));
+      O.font = `${t.small ? 11 : 12}px ${FONT}`; O.fillStyle = '#6a4a2a';
+      O.fillText(t.sub, VIEW_W / 2, ty + (t.small ? 28 : 33), w - 16);
+      ty += h + 5;
     }
     this.toasts = this.toasts.filter((t) => t.life > 0);
     if (this.showMap) this.drawMinimap(ctx, snap);

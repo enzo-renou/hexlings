@@ -34,8 +34,28 @@ const killAll = (g) => { for (const e of g.enemies) g.damageEnemy(e, 1e9, g.play
   const p = g.players[0]; p.keys = 0;
   p.x = (DIRS[d].tx + 0.5) * TILE; p.y = (DIRS[d].ty + 0.5) * TILE; run(g, 0.1);
   ok(g.room === nb, 'sans clé on ne peut pas entrer');
+  // on marche vers la porte pendant 1 s : la porte doit bloquer le sorcier
+  p.x = (DIRS[d].tx - DIRS[d].dx * 1.5 + 0.5) * TILE; p.y = (DIRS[d].ty - DIRS[d].dy * 1.5 + 0.5) * TILE;
+  g.setInput('a', { mx: DIRS[d].dx, my: DIRS[d].dy, sx: 0, sy: 0 }); run(g, 1); g.setInput('a', { mx: 0, my: 0, sx: 0, sy: 0 });
+  const dtx = Math.floor(p.x / TILE), dty = Math.floor(p.y / TILE);
+  ok(!(dtx === DIRS[d].tx && dty === DIRS[d].ty) && g.room === nb, 'sans clé la porte verrouillée est solide (on ne passe pas à travers)');
   p.keys = 1; p.x = (DIRS[d].tx + 0.5) * TILE; p.y = (DIRS[d].ty + 0.5) * TILE; run(g, 0.1);
   ok(g.room === tr && p.keys === 0, 'avec une clé la porte s’ouvre');
+}
+// --- coffre doré : solide sans clé, s'ouvre avec une clé
+{
+  const g = new Game({ seed: 9, players: [{ id: 'a', charId: 'pyra' }] });
+  g.enterRoom(g.fl.rooms.find((r) => r.type === 'start'), null);
+  const p = g.players[0]; p.keys = 0; p.iframes = 99;
+  const ch = g.makePickup('gchest', 360, 216); g.room.pickups.push(ch);
+  p.x = 300; p.y = 216;
+  g.setInput('a', { mx: 1, my: 0, sx: 0, sy: 0 });
+  let minD = 1e9;
+  for (let i = 0; i < 48; i++) { g.step(DT); minD = Math.min(minD, Math.hypot(p.x - ch.x, p.y - ch.y)); }
+  ok(minD > 20 && !ch.taken, `sans clé on ne traverse pas le coffre doré (distance mini ${minD.toFixed(0)})`);
+  p.keys = 1; run(g, 0.4);
+  ok(ch.taken && p.keys === 0, 'avec une clé le coffre doré s’ouvre');
+  g.setInput('a', { mx: 0, my: 0, sx: 0, sy: 0 });
 }
 // --- salle de défi : plusieurs vagues puis un objet
 {
