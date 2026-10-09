@@ -35,6 +35,7 @@ const key = (x, y) => x + ',' + y;
 function pickShape(rng, floor) {
   const r = rng.next();
   if (floor <= 1) return r < 0.1 ? rng.pick(['2x1', '1x2']) : '1x1';
+  if (floor <= 3) return r < 0.8 ? '1x1' : r < 0.94 ? rng.pick(['2x1', '1x2']) : rng.pick(['2x2', 'L1', 'L2', 'L3', 'L4']);
   if (r < 0.62) return '1x1';
   if (r < 0.76) return rng.pick(['2x1', '1x2']);
   if (r < 0.86) return '2x2';
@@ -42,7 +43,8 @@ function pickShape(rng, floor) {
 }
 
 export function generateFloor(rng, floor, biome, opts = {}) {
-  const targetCells = Math.min(34, Math.floor(9 + floor * 2.1) + rng.int(0, 2));
+  // comme Isaac : petits étages au début, qui grandissent en descendant (≈8 cases à l'étage 1, ≈29 à l'étage 10)
+  const targetCells = Math.min(30, Math.floor(6 + floor * 2.3) + rng.int(0, 1));
   const bossShape = opts.bossShape || '1x1';
   for (let attempt = 0; attempt < 400; attempt++) {
     const cellOf = new Map(); // "x,y" -> salle

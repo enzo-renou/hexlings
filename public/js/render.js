@@ -58,6 +58,7 @@ const PROJ = {
   solaris: { c: '#ffe45c', core: '#ffffff', s: 'spark' },
 };
 const SPLAT = { bones: ['#e8e0c8', 'bits'], rubble: ['#7c818b', 'bits'], ecto: ['#bfe0ff', 'goo'], pages: ['#f4ead0', 'bits'], sparkle: ['#ff9af0', 'none'], gears: ['#c8a050', 'bits'], sand: ['#d8b878', 'bits'] };
+const PRINT_COL = { frost: '#8aa0c0', sands: '#8a6a3a', swamp: '#1e2a14', forest: '#2a3a1a' };
 const HAZ_COL = { acid: '#9ad83a', fire: '#ff7a2a', lava: '#ff5a1a', void: '#a06aff', ice: '#9ee8ff', blood: '#c81e3a', sand: '#d8b06a', poison: '#7ad84a', slime: '#6fcf4a', ink: '#3a2a5a' };
 const BEAM_COL = { red: ['#ff3a4a', '#ffd0d8'], purple: ['#c04aff', '#f0d0ff'], ice: ['#6ad8ff', '#e8faff'], fire: ['#ff8a2a', '#fff0a0'], gold: ['#ffd34a', '#ffffff'], green: ['#6aff7a', '#e0ffe0'], void: ['#8a5aff', '#e8d8ff'] };
 
@@ -81,7 +82,8 @@ export class Renderer {
     this.ovl = mk(VIEW_W, VIEW_H, true);
     this.lctx = this.light.ctx;
     this.shakeOn = true;
-    this.highlight = 'arrow'; // mise en valeur de son sorcier en multi : off | ring | arrow
+    this.highlight = 'arrow';
+    this.dmgNumbers = true; this.dnums = []; this.prints = []; this.stepAcc = new Map(); this.slow = null; this.zoomK = 0; this.lookX = 0; this.lookY = 0; this.vs = null; // mise en valeur de son sorcier en multi : off | ring | arrow
     this.camX = 0; this.camY = 0;
     this.reset();
   }
@@ -102,6 +104,12 @@ export class Renderer {
       const s = spd * (0.3 + Math.random());
       this.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s + (opts.up || 0), life: life * (0.6 + Math.random() * 0.6), max: life, color, size: size * (0.6 + Math.random() * 0.8), g: opts.g || 0, glow: opts.glow });
     }
+  }
+  // ralenti (mort du boss, ta propre chute) : la simulation solo tourne moins vite
+  timeScale() {
+    if (!this.slow) return 1;
+    const k = this.slow.t / this.slow.dur;
+    return k < 0.7 ? this.slow.k : this.slow.k + (1 - this.slow.k) * ((k - 0.7) / 0.3);
   }
   ring(x, y, r, color, life = 0.35, w = 3) { this.parts.push({ ring: true, x, y, r, color, life, max: life, w }); }
   float(x, y, text, color, life = 1) { this.floats.push({ x, y, text, life, color }); }
@@ -209,7 +217,7 @@ export class Renderer {
         this.float(ev.x, ev.y - 30, '-♥', '#ff4a6a', 0.8);
         if (ev.pid === meId) { this.shake = Math.max(this.shake, 8); this.flash = 0.3; }
         break;
-      case 'pdie': this.burst(ev.x, ev.y, 34, '#e8304a', 210, 0.9, 4, { g: 200 }); this.toast(`${pname(ev.pid)} est tombé !`, snap.players.length > 1 ? 'Reste près de son fantôme pour le réanimer' : '', '#ff7a8a'); break;
+      case 'pdie': this.burst(ev.x, ev.y, 34, '#e8304a', 210, 0.9, 4, { g: 200 }); if (ev.pid === meId) { this.slow = { t: 0, dur: 1.2, k: 0.3 }; this.zoomK = 0.18; this.flashC = { c: '#3a0010', a: 0.5 }; } this.toast(`${pname(ev.pid)} est tombé !`, snap.players.length > 1 ? 'Reste près de son fantôme pour le réanimer' : '', '#ff7a8a'); break;
       case 'revive': this.burst(ev.x, ev.y, 44, '#ffb347', 230, 1, 4, { glow: true }); this.ring(ev.x, ev.y, 80, '#ffb347', 0.6, 5); this.toast('Plume de Phénix !', `${pname(ev.pid)} renaît de ses cendres`, '#ffb347'); break;
       case 'aegis': this.ring(ev.x, ev.y, 44, '#7ad1ff', 0.4, 4); this.float(ev.x, ev.y - 30, 'Égide !', '#7ad1ff', 1); break;
       case 'heal': this.burst(ev.x, ev.y, 12, '#ff6a8a', 80, 0.7, 3, { up: -40, glow: true }); this.float(ev.x, ev.y - 20, '+♥', '#ff6a8a', 0.8); break;
@@ -256,8 +264,13 @@ export class Renderer {
         break;
       }
       case 'clear': this.doorTarget = 1; this.doorDelay = 0.15; break;
-      case 'boss': this.banner = { title: ev.name, sub: 'BOSS', life: 2.6, color: '#ff8a8a', boss: true }; this.shake = 12; this.bossLag = 1; break;
-      case 'bossdown': this.banner = { title: 'Boss vaincu !', sub: ev.floor >= 10 ? 'La tour est libérée...' : 'Une trappe s’est ouverte', life: 2.4, color: '#ffe08a' }; this.trapBorn = this.t; break;
+      case 'boss': this.vs = { t: 0, dur: 2.2, name: ev.name, id: ev.id, final: ev.final }; this.shake = 6; this.bossLag = 1; break;
+      case 'dmg':
+        if (!this.dmgNumbers || !(ev.n > 0)) break;
+        this.dnums.push({ x: ev.x + (Math.random() - 0.5) * 10, y: ev.y, vx: (Math.random() - 0.5) * 50, vy: -90, n: ev.n, life: 0.75, b: ev.b });
+        if (this.dnums.length > 50) this.dnums.shift();
+        break;
+      case 'bossdown': this.slow = { t: 0, dur: 1.3, k: 0.22 }; this.zoomK = 0.14; this.flashW = 0.45; this.banner = { title: 'Boss vaincu !', sub: ev.floor >= 10 ? 'La tour est libérée...' : 'Une trappe s’est ouverte', life: 2.4, color: '#ffe08a' }; this.trapBorn = this.t; break;
       case 'unlock': this.toast('Nouveau sorcier débloqué !', CHARACTERS[ev.char] ? `${CHARACTERS[ev.char].name} ${CHARACTERS[ev.char].title}` : '', '#c79bff', '🔓'); break;
       case 'thit': {
         const col = ev.t === T_FIRE ? fireColor(B.fire) : ev.t === T_POT ? '#b0683a' : ev.t === T_GPOOP ? '#ffd34a' : '#c8a878';
@@ -760,7 +773,7 @@ export class Renderer {
     c.restore();
     if (e.sh) { c.strokeStyle = `rgba(150,230,255,${0.5 + Math.sin(this.t * 8) * 0.25})`; c.lineWidth = 3; c.beginPath(); c.arc(x, y, r * 1.35, 0, TAU); c.stroke(); }
     if (e.fa != null && e.t !== 'crystal' && (ENEMIES[e.t] || {}).ai === 'shield') {
-      c.save(); c.translate(x, y); c.rotate(e.fa); c.fillStyle = '#8a8a9a'; c.fillRect(r * 0.6, -r * 0.9, 6, r * 1.8); c.fillStyle = '#c8c8d8'; c.fillRect(r * 0.6, -r * 0.9, 2, r * 1.8); c.restore();
+      c.save(); c.translate(x, y); c.rotate(e.fa + (e.gd ? 1.25 : 0)); if (e.gd) c.globalAlpha = 0.6; c.fillStyle = '#8a8a9a'; c.fillRect(r * 0.6, -r * 0.9, 6, r * 1.8); c.fillStyle = '#c8c8d8'; c.fillRect(r * 0.6, -r * 0.9, 2, r * 1.8); c.restore();
     }
     if (e.aim != null) { c.strokeStyle = 'rgba(255,60,60,0.5)'; c.lineWidth = 1; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(e.aim) * 600, y + Math.sin(e.aim) * 600); c.stroke(); c.setLineDash([]); }
     if (e.sl) { c.fillStyle = 'rgba(140,220,255,0.22)'; c.beginPath(); c.arc(x, y, r * 1.05, 0, TAU); c.fill(); if (Math.random() < 0.1) this.parts.push({ x: x + (Math.random() - 0.5) * r * 2, y: y - r, vx: 0, vy: 15, life: 0.6, max: 0.6, color: '#dff6ff', size: 2 }); }
@@ -778,6 +791,15 @@ export class Renderer {
     const castT = this.cast.get(p.id) || 0;
     const hold = this.hold.get(p.id);
     lights.push({ x: p.x, y: p.y - 10, r: p.dead ? 50 : 125, c: ch.shot, a: p.dead ? 0.4 : 0.9 });
+    if (moving && !p.dead && !p.fly && PRINT_COL[this.deco]) {
+      const acc = (this.stepAcc.get(p.id) || 0) + Math.hypot(p.vx, p.vy) * (1 / 60);
+      if (acc > 16) {
+        const side = (this.prints.length % 2 ? 1 : -1) * 4, a = Math.atan2(p.vy, p.vx);
+        this.prints.push({ x: p.x - Math.sin(a) * side, y: p.y + 13 + Math.cos(a) * side, a, life: 5, col: PRINT_COL[this.deco] });
+        if (this.prints.length > 120) this.prints.shift();
+        this.stepAcc.set(p.id, 0);
+      } else this.stepAcc.set(p.id, acc);
+    }
     if (moving && !p.dead && Math.random() < 0.25 && !p.fly) this.parts.push({ x: p.x + (Math.random() - 0.5) * 10, y: p.y + 12, vx: -p.vx * 0.1, vy: -10, life: 0.4, max: 0.4, color: 'rgba(200,190,180,0.5)', size: 3, dust: true });
     // familiers
     for (const [type, fx, fy] of p.fam || []) this.drawFamiliar(c, type, fx, fy, lights);
@@ -1149,8 +1171,12 @@ export class Renderer {
   updateCamera(snap, me, dt) {
     const PW = snap.room.W * TILE, PH = snap.room.H * TILE;
     let tx = 0, ty = 0;
-    if (PW > AW) tx = clamp((me ? me.x : PW / 2) - AW / 2, 0, PW - AW);
-    if (PH > AH) ty = clamp((me ? me.y : PH / 2) - AH / 2, 0, PH - AH);
+    // la caméra regarde un peu devant toi dans les grandes salles
+    const kl = Math.min(1, dt * 2.5);
+    this.lookX += ((me && !me.dead ? (me.fx || 0) * 44 : 0) - this.lookX) * kl;
+    this.lookY += ((me && !me.dead ? (me.fy || 0) * 30 : 0) - this.lookY) * kl;
+    if (PW > AW) tx = clamp((me ? me.x + this.lookX : PW / 2) - AW / 2, 0, PW - AW);
+    if (PH > AH) ty = clamp((me ? me.y + this.lookY : PH / 2) - AH / 2, 0, PH - AH);
     if (this.camSnap) { this.camX = tx; this.camY = ty; this.camSnap = false; }
     else { const k = Math.min(1, dt * 8); this.camX += (tx - this.camX) * k; this.camY += (ty - this.camY) * k; }
     this.camX = Math.round(this.camX); this.camY = Math.round(this.camY);
@@ -1164,6 +1190,9 @@ export class Renderer {
     if (key !== this.bgKey) { this.buildBg(snap); this.bgKey = key; }
     const me = snap.players.find((p) => p.id === meId) || snap.players[0];
     this.snapPlayers = snap.players; this.meId = meId;
+    this.deco = (BIOMES[snap.biome] || BIOMES.castle).deco;
+    if (this.slow) { this.slow.t += dt; if (this.slow.t >= this.slow.dur) this.slow = null; }
+    this.zoomK = Math.max(0, this.zoomK - dt * 0.16);
     this.updateCamera(snap, me, dt);
     for (const [k, v] of this.cast) { const n = v - dt; if (n <= 0) this.cast.delete(k); else this.cast.set(k, n); }
     for (const [k, v] of this.hold) { v.t -= dt; if (v.t <= 0) this.hold.delete(k); }
@@ -1195,6 +1224,14 @@ export class Renderer {
     this.drawTrapdoor(E, snap, B, lights);
     for (const l of this.lavaLights || []) if (this.inView(l.x, l.y, 70)) lights.push({ x: l.x, y: l.y, r: 70, c: '#ff6a1a', a: 0.7 });
     this.drawDestructibles(E, snap, B, lights);
+    for (const f of this.prints) {
+      f.life -= dt;
+      if (f.life <= 0 || !this.inView(f.x, f.y, 10)) continue;
+      E.globalAlpha = Math.min(1, f.life / 2) * 0.55; E.fillStyle = f.col;
+      E.beginPath(); E.ellipse(f.x, f.y, 3.2, 2, f.a, 0, TAU); E.fill();
+    }
+    E.globalAlpha = 1;
+    this.prints = this.prints.filter((f) => f.life > 0);
     for (const pk of snap.pickups) this.drawPickup(E, pk, me, lights);
     for (const [, bx, by, bt, big] of snap.bombs || []) {
       const sw = 1 + Math.max(0, 0.6 - bt) * 0.5 * Math.sin(this.t * 40);
@@ -1282,6 +1319,11 @@ export class Renderer {
       if (f.life > 0) this.texts.push({ x: f.x, y: f.y, text: f.text, color: f.color, size: 15, alpha: Math.min(1, f.life * 2) });
     }
     this.floats = this.floats.filter((f) => f.life > 0);
+    for (const d of this.dnums) {
+      d.life -= dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 220 * dt;
+      if (d.life > 0) this.texts.push({ x: d.x, y: d.y, text: d.n >= 10 ? String(Math.round(d.n)) : String(d.n), color: d.n >= 12 ? '#ffb347' : d.b ? '#ffd0d0' : '#ffffff', size: d.n >= 12 ? 17 : 14, alpha: Math.min(1, d.life * 3) });
+    }
+    this.dnums = this.dnums.filter((d) => d.life > 0);
 
     pixelize(E, AW, AH, { outline: true, solid: 0.45, dither: false });
     pixelize(X, AW / 2, AH / 2, { outline: false, solid: 0.6, dither: false });
@@ -1314,6 +1356,13 @@ export class Renderer {
     if (this.flashW > 0) { W.fillStyle = `rgba(255,255,255,${this.flashW})`; W.fillRect(0, 0, AW, AH); this.flashW -= dt; }
     if (this.flash > 0) { this.flash -= dt; W.fillStyle = `rgba(255,0,40,${Math.max(0, this.flash) * 0.5})`; W.fillRect(0, 0, AW, AH); }
     if (snap.desc > 0) { W.fillStyle = `rgba(0,0,0,${Math.pow(snap.desc, 1.6)})`; W.fillRect(0, 0, AW, AH); }
+    // presque mort : le bord de l'écran bat en rouge
+    if (me && !me.dead && me.hp <= 2 && !(me.soul || '').length && snap.players.length) {
+      const beat = Math.pow(Math.max(0, Math.sin(this.t * 5.2)), 6);
+      const vg = W.createRadialGradient(AW / 2, AH / 2, AH * 0.34, AW / 2, AH / 2, AW * 0.62);
+      vg.addColorStop(0, 'rgba(160,0,20,0)'); vg.addColorStop(1, `rgba(170,0,20,${0.36 + beat * 0.28})`);
+      W.fillStyle = vg; W.fillRect(0, 0, AW, AH);
+    }
     if (this.iris) {
       this.iris.t += dt;
       const k = ease(clamp01(this.iris.t / this.iris.dur));
@@ -1344,6 +1393,11 @@ export class Renderer {
       m.drawImage(this.prev, -ox, -oy, SW, SH);
       m.drawImage(this.world, d.dx * SW - ox, d.dy * SH - oy, SW, SH);
       if (this.trans.t >= this.trans.dur) this.trans = null;
+    } else if (this.zoomK > 0.004 && me) {
+      // petit zoom sur l'action (mort d'un boss, ta chute)
+      const z = 1 + this.zoomK, sw = AW / z, sh = AH / z;
+      const sx = clamp(me.x - cx - sw / 2, 0, AW - sw), sy = clamp(me.y - cy - 10 - sh / 2, 0, AH - sh);
+      m.drawImage(this.world, sx, sy, sw, sh, 0, 0, SW, SH);
     } else m.drawImage(this.world, 0, 0, SW, SH);
 
     // -------- interface
@@ -1351,9 +1405,10 @@ export class Renderer {
     H.setTransform(1, 0, 0, 1, 0, 0);
     H.globalAlpha = 1;
     H.clearRect(0, 0, VIEW_W, VIEW_H);
-    if (!this.trans) this.drawWorldTexts(H, shx - cx, shy - cy);
+    if (!this.trans && this.zoomK <= 0.004) this.drawWorldTexts(H, shx - cx, shy - cy);
     if (snap.room.type === 'start' && snap.floor === 1) this.drawTutorial(H);
     this.drawHUD(H, snap, me, meId, dt, extra, B);
+    if (this.vs) this.drawVersus(H, me, dt);
     pixelize(H, VIEW_W, VIEW_H, { outline: true, solid: 0.5, dither: false });
     if (this.showMap) { m.fillStyle = 'rgba(8,5,14,0.72)'; m.fillRect(0, 0, SW, SH); }
     m.drawImage(this.hud, 0, 0, SW, SH);
@@ -1428,6 +1483,51 @@ export class Renderer {
       c.fillStyle = ch === 'H' ? '#fff2a0' : j > 2 ? '#c88a1a' : '#ffd34a';
       c.fillRect(x + i * p, y + j * p, p, p);
     }
+  }
+
+  // carte « VS » façon Isaac à l'arrivée d'un boss
+  drawVersus(c, me, dt) {
+    const v = this.vs;
+    v.t += dt;
+    if (v.t >= v.dur) { this.vs = null; return; }
+    const k = v.t / v.dur;
+    const inK = ease(clamp01(v.t / 0.28)), outK = clamp01((v.t - (v.dur - 0.3)) / 0.3);
+    const alpha = 1 - outK;
+    const cy = VIEW_H / 2, bandH = 150;
+    c.save();
+    c.globalAlpha = alpha * 0.6; c.fillStyle = '#05030a'; c.fillRect(0, 0, VIEW_W, VIEW_H);
+    c.globalAlpha = alpha;
+    const bw = VIEW_W * inK;
+    c.fillStyle = '#140c1c'; c.fillRect(0, cy - bandH / 2, bw, bandH);
+    c.fillStyle = v.final ? '#ffd34a' : '#c81e3a'; c.fillRect(0, cy - bandH / 2 - 4, bw, 4); c.fillRect(VIEW_W - bw, cy + bandH / 2, bw, 4);
+    // rayures qui défilent
+    c.fillStyle = 'rgba(255,255,255,0.04)';
+    for (let i = -2; i < 24; i++) { const x = ((i * 40 + v.t * 240) % (VIEW_W + 80)) - 40; c.beginPath(); c.moveTo(x, cy - bandH / 2); c.lineTo(x + 18, cy - bandH / 2); c.lineTo(x - 22, cy + bandH / 2); c.lineTo(x - 40, cy + bandH / 2); c.fill(); }
+    const slide = (1 - inK) * 260;
+    if (me) {
+      const ch = CHARACTERS[me.c];
+      c.save(); c.translate(150 - slide, cy + 40); c.scale(2.6, 2.6);
+      drawWizardSprite(c, 0, -12, ch, { t: this.t, fx: 1, fy: 0.3, moving: false });
+      c.restore();
+      c.font = `bold 16px ${FONT}`; c.textAlign = 'center'; c.fillStyle = ch.shot; c.fillText(me.name || ch.name, 150 - slide, cy + bandH / 2 - 10);
+    }
+    const bx = VIEW_W - 150 + slide, by = cy + 8;
+    const shake = k < 0.5 ? Math.sin(this.t * 50) * 1.5 : 0;
+    c.save(); c.translate(shake, 0);
+    drawMonster(c, { t: v.id, b: 1, r: 56, x: bx, y: by, id: 0 }, this.t, { x: bx, y: by });
+    c.restore();
+    c.font = `bold 18px ${FONT}`; c.textAlign = 'center'; c.fillStyle = v.final ? '#ffd34a' : '#ff8a8a';
+    c.fillText(v.name, bx, cy + bandH / 2 - 10);
+    if (v.final) { c.font = `11px ${FONT}`; c.fillStyle = '#ffd34a'; c.fillText('BOSS FINAL', bx, cy - bandH / 2 + 16); }
+    // VS
+    const vsS = 1 + Math.max(0, 0.6 - v.t * 2) * 1.5;
+    c.save(); c.translate(VIEW_W / 2, cy + 4); c.scale(vsS, vsS);
+    c.font = `bold 46px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = '#2a0a10'; c.fillText('VS', 3, 3);
+    c.fillStyle = v.final ? '#ffd34a' : '#ff4a5a'; c.fillText('VS', 0, 0);
+    c.restore();
+    c.restore();
+    c.textBaseline = 'alphabetic';
   }
 
   drawHUD(ctx, snap, me, meId, dt, extra, B) {

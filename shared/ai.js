@@ -304,7 +304,9 @@ export const AI = {
   shield(g, e, dt, tgt, slow, c) {
     AI.chase(g, e, dt, tgt, slow, c);
     e.face = c.aim;
-    if (e.def.fire && e.cd <= 0 && c.dist < 260) { e.cd = e.def.fire; shootOne(g, e, c.aim, e.def); g.emit({ k: 'eshoot', x: e.x, y: e.y }); }
+    e.guardDown = Math.max(0, (e.guardDown || 0) - dt);
+    // il baisse son bouclier pour tirer : c'est le moment de frapper
+    if (e.def.fire && e.cd <= 0 && c.dist < 260) { e.cd = e.def.fire; e.guardDown = 0.9; shootOne(g, e, c.aim, e.def); g.emit({ k: 'eshoot', x: e.x, y: e.y }); }
   },
 };
 
@@ -390,7 +392,8 @@ export const BOSS_ATTACKS = {
       const n = Math.max(0, Math.min(a.n, (a.max || 6) - minions));
       for (let i = 0; i < n; i++) {
         const ang = (i / Math.max(1, n)) * TAU + a.ang;
-        const m = g.spawnEnemy(a.type, e.x + Math.cos(ang) * (e.r + 20), e.y + Math.sin(ang) * (e.r + 20), { spawnT: 0.5 });
+        const type = g.totalPlayers === 1 && g.enemyDef(a.type)?.ai === 'shield' ? 'skeleton' : a.type;
+        const m = g.spawnEnemy(type, e.x + Math.cos(ang) * (e.r + 20), e.y + Math.sin(ang) * (e.r + 20), { spawnT: 0.5 });
         g.collide(m, m.fly ? 'fly' : 'walk');
       }
       g.emit({ k: 'summon', x: e.x, y: e.y });

@@ -33,6 +33,7 @@ input.setBindings(S0.keys);
 input.setPad(S0.pad);
 renderer.shakeOn = S0.shake !== false;
 renderer.highlight = S0.highlight || 'arrow';
+renderer.dmgNumbers = S0.dmgNumbers !== false;
 document.documentElement.style.setProperty('--stone', `url(${menuTexture()})`);
 function refreshKeyNames() {
   const b = input.bind;
@@ -590,6 +591,7 @@ function openSettings() {
   $('#vol-sfx').value = Math.round(st.sfx * 100);
   $('#vol-music').value = Math.round(st.music * 100);
   $('#opt-shake').checked = st.shake !== false;
+  $('#opt-dmg').checked = st.dmgNumbers !== false;
   $('#opt-highlight').value = st.highlight || 'arrow'; renderer.highlight = st.highlight || 'arrow';
   renderKeys();
   renderPad();
@@ -728,7 +730,7 @@ function frame(now) {
       if (input.consume('orb')) game.requestOrb('local');
       if (input.consume('potion')) game.requestPotion('local');
       for (let i = 1; i <= 4; i++) if (input.consume('emote' + i)) game.requestEmote('local', i - 1);
-      acc += dt;
+      acc += dt * renderer.timeScale();
       while (acc >= DT) { game.step(DT); acc -= DT; }
     } else input.consumeSpell();
     const snap = game.snapshot();
@@ -757,8 +759,12 @@ function frame(now) {
       if (latest.state !== 'playing' && !ended) endRun(latest, net.id);
     }
   }
+  // battement de cœur quand il ne reste presque plus de vie
+  const meL = lastSnap && inGame && !paused ? lastSnap.players.find((p) => p.id === (mode === 'solo' ? 'local' : net?.id)) : null;
+  if (meL && !meL.dead && meL.hp <= 2 && !(meL.soul || '').length && now - lastBeat > 900) { lastBeat = now; audio.play('heartbeat'); }
   requestAnimationFrame(frame);
 }
+let lastBeat = 0;
 
 // ---------------------------------------------------------- boutons
 $('#name').value = meta.data.name || '';
@@ -808,6 +814,7 @@ $('#btn-settings').onclick = () => { audio.unlock(); togglePause(); };
 $('#vol-sfx').oninput = (e) => { meta.data.settings.sfx = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
 $('#vol-sfx').onchange = () => audio.play('coin');
 $('#vol-music').oninput = (e) => { meta.data.settings.music = e.target.value / 100; audio.unlock(); audio.setVolumes(meta.data.settings.sfx, meta.data.settings.music); meta.save(); };
+$('#opt-dmg').onchange = (e) => { meta.data.settings.dmgNumbers = e.target.checked; renderer.dmgNumbers = e.target.checked; meta.save(); };
 $('#opt-highlight').onchange = (e) => { meta.data.settings.highlight = e.target.value; renderer.highlight = e.target.value; meta.save(); };
 $('#opt-shake').onchange = (e) => { meta.data.settings.shake = e.target.checked; renderer.shakeOn = e.target.checked; meta.save(); };
 $('#btn-keys-reset').onclick = () => { input.setBindings(DEFAULT_KEYS); meta.data.settings.keys = {}; meta.save(); refreshKeyNames(); renderKeys(); };

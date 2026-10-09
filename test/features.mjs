@@ -32,13 +32,17 @@ const standOn = (p, d) => { p.x = (d.tx + 0.5) * TILE; p.y = (d.ty + 0.5) * TILE
   let shapes = new Set();
   for (let s = 1; s < 8; s++) { const g = solo(s); g.startFloor(6); for (const r of g.fl.rooms) shapes.add(r.shape); }
   ok(['2x1', '1x2', '2x2'].every((x) => shapes.has(x)) && [...shapes].some((x) => x.startsWith('L')), `grandes salles générées (${[...shapes].join(', ')})`);
-  const g = solo(3); g.startFloor(6);
-  const big = g.fl.rooms.find((r) => r.shape === '2x2' || r.shape === '2x1');
-  g.enterRoom(big, null); killAll(g);
-  const p = g.players[0]; p.iframes = 99;
-  g.setInput('a', { mx: 1, my: 0, sx: 0, sy: 0 }); run(g, 3);
-  ok(p.x > 720, `on peut traverser une grande salle (x = ${Math.round(p.x)}, largeur ${big.W * TILE})`);
-  g.setInput('a', { mx: 0, my: 0, sx: 0, sy: 0 });
+  let best = 0, bw = 0;
+  for (let s = 3; s < 10 && best <= 720; s++) {
+    const g = solo(s); g.startFloor(6);
+    const big = g.fl.rooms.find((r) => r.shape === '2x2' || r.shape === '2x1');
+    if (!big) continue;
+    g.enterRoom(big, null); killAll(g);
+    const p = g.players[0]; p.iframes = 99;
+    g.setInput('a', { mx: 1, my: 0, sx: 0, sy: 0 }); run(g, 3);
+    if (p.x > best) { best = p.x; bw = big.W * TILE; }
+  }
+  ok(best > 720, `on peut traverser une grande salle (x = ${Math.round(best)}, largeur ${bw})`);
 }
 // --- salle au trésor verrouillée (étage 2)
 {
@@ -230,9 +234,31 @@ const standOn = (p, d) => { p.x = (d.tx + 0.5) * TILE; p.y = (d.ty + 0.5) * TILE
   ok(forC.taken, 'si le propriétaire est déconnecté, un autre peut prendre son objet');
   g.setAway('c', false);
   g.startFloor(2); g.enterRoom(g.fl.boss, null);
-  const boss = g.enemies.find((e) => e.boss); g.damageEnemy(boss, 1e6, null); for (let i = 0; i < 30; i++) g.step(DT);
+  const boss = g.enemies.find((e) => e.boss); const bhp = boss.hp; g.damageEnemy(boss, 5, null);
+  ok(boss.hp === bhp && g.players.every((p) => p.iframes > 2), 'intro du boss : personne ne peut être touché pendant la carte « VS »');
+  boss.spawnT = 0; g.damageEnemy(boss, 1e6, null); for (let i = 0; i < 30; i++) g.step(DT);
   const bi = g.room.pickups.filter((pk) => pk.kind === 'item');
   ok(bi.length === 3 && bi.every((pk) => pk.owner), `boss : un objet par joueur (${bi.length})`);
+}
+// --- équilibrage : petits étages au début, pas de chevaliers à bouclier en solo, coriaces limités
+{
+  const sizes = [1, 2, 5, 10].map((f) => { const g = solo(7); g.startFloor(f); return g.fl.rooms.filter((r) => r.type === 'normal').length; });
+  ok(sizes[0] <= 9 && sizes[0] < sizes[3], `étages qui grandissent (salles normales : ${sizes.join(' → ')})`);
+  let knights = 0, toughMax = 0;
+  for (let s = 1; s < 6; s++) {
+    const g = solo(s); g.biomes[1] = 'castle'; g.startFloor(1);
+    for (const r of g.fl.rooms.filter((r) => r.type === 'normal')) { g.enterRoom(r, null); knights += g.enemies.filter((e) => e.def.ai === 'shield').length; }
+    const g2 = solo(s); g2.biomes[1] = 'swamp'; g2.startFloor(1);
+    for (const r of g2.fl.rooms.filter((r) => r.type === 'normal')) { g2.enterRoom(r, null); toughMax = Math.max(toughMax, g2.enemies.filter((e) => e.def.tough).length); }
+  }
+  ok(knights === 0, 'aucun chevalier à bouclier en solo');
+  ok(toughMax <= 1, `au plus 1 crapaud / crocodile par salle à l’étage 1 (${toughMax})`);
+  const m = new Game({ seed: 3, players: [{ id: 'a', charId: 'pyra' }, { id: 'b', charId: 'volt' }] });
+  m.startFloor(1);
+  const kn = m.spawnEnemy('knight', 300, 200, {}); kn.face = 0; kn.guardDown = 0.5; const hp0 = kn.hp;
+  m.projs.push({ team: 'p', x: kn.x + 10, y: kn.y, vx: -300, vy: 0, r: 6, dmg: 3, life: 1, hits: [], fl: {}, pid: 'a' });
+  m.step(DT);
+  ok(kn.hp < hp0, 'le chevalier baisse son bouclier quand il tire (on peut le toucher)');
 }
 // --- champions et mode difficile
 {

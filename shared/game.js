@@ -397,6 +397,7 @@ export class Game {
     list.forEach((ex, i) => room.pickups.push(this.makePickup('item', cx + (i - (list.length - 1) / 2) * step, cy, ex, room)));
   }
 
+  enemyDef(t) { return ENEMIES[t]; }
   ownerPresent(id) { const o = this.players.find((q) => q.id === id); return !!o && !o.away; }
 
   populate(room) {
@@ -463,7 +464,7 @@ export class Game {
   }
 
   enemyCountFor(room = this.room) {
-    const base = this.rng.int(2, 4) + Math.floor(this.floor / 2) + (this.hard ? 1 : 0);
+    const base = this.hard ? this.rng.int(2, 4) + Math.floor(this.floor / 2) + 1 : this.rng.int(2, 3) + Math.floor(this.floor / 2.5);
     const mult = room.cells.length === 1 ? 1 : room.cells.length === 2 ? 1.6 : 2.1;
     return Math.min(16, Math.round(base * mult));
   }
@@ -473,19 +474,31 @@ export class Game {
     return this.rng.chance(ch) ? this.rng.pick(Object.keys(CHAMPIONS)) : null;
   }
   spawnRoomEnemies(room, bonus = 0) {
-    const pool = this.biome.enemies.filter((id) => ENEMIES[id]).map((id) => ({ id, weight: ENEMIES[id].weight || 1 }));
+    // en solo, pas de chevaliers à bouclier (impossibles à contourner seul)
+    let ids = this.biome.enemies.filter((id) => ENEMIES[id] && !(this.totalPlayers === 1 && ENEMIES[id].ai === 'shield'));
+    if (!ids.length) ids = this.biome.enemies.filter((id) => ENEMIES[id]);
+    const pool = ids.map((id) => ({ id, weight: ENEMIES[id].weight || 1 }));
+    const soft = pool.filter((q) => !ENEMIES[q.id].tough);
+    // monstres coriaces (crapauds, crocodiles...) limités au début
+    const toughMax = (this.floor <= 2 ? 1 : this.floor <= 4 ? 2 : 99) + (this.hard ? 1 : 0);
+    let tough = 0;
+    const pickType = (t) => {
+      if (ENEMIES[t].tough && tough >= toughMax && soft.length) t = this.rng.weighted(soft).id;
+      if (ENEMIES[t].tough) tough++;
+      return t;
+    };
     const spots = this.rng.shuffle(this.freeTiles(170));
     const n = Math.min(spots.length, this.enemyCountFor(room) + bonus);
     const theme = this.rng.chance(0.3) ? this.rng.weighted(pool).id : null;
     for (let i = 0; i < n; i++) {
-      const type = theme && i < n - 1 ? theme : this.rng.weighted(pool).id;
+      const type = pickType(theme && i < n - 1 ? theme : this.rng.weighted(pool).id);
       this.spawnEnemy(type, spots[i].x, spots[i].y, { champ: this.rollChampion() });
     }
     if (room.mimic && spots[n]) { this.spawnEnemy('mimic', spots[n].x, spots[n].y, { spawnT: 0 }); }
     room.combat = true;
     if (!n) room.cleared = true;
   }
-  hpScale() { return (1 + 0.24 * (this.floor - 1)) * (1 + 0.22 * (this.totalPlayers - 1)) * (this.hard ? 1.4 : 1); }
+  hpScale() { return (1 + (this.hard ? 0.24 : 0.2) * (this.floor - 1)) * (1 + 0.22 * (this.totalPlayers - 1)) * (this.hard ? 1.4 : 1); }
   bossHpScale() { return (1 + 0.12 * (this.floor - 1)) * (1 + 0.6 * (this.totalPlayers - 1)) * (this.hard ? 1.5 : 1); }
 
   spawnEnemy(type, x, y, extra = {}) {
@@ -553,7 +566,10 @@ export class Game {
     }
     if (bd.hands) for (const side of [-1, 1]) this.spawnEnemy(bd.hands, head.x + side * 120, head.y + 60, { link: head.id, side, spawnT: 1 });
     this.room.combat = true;
-    this.emit({ k: 'boss', name: head.name, look: bd.look, id: baseId });
+    // carte « VS » d'introduction : le boss se matérialise pendant qu'elle s'affiche
+    for (const e of this.enemies) if (e.boss || e.link === head.id) e.spawnT = Math.max(e.spawnT || 0, 2.2);
+    for (const p of this.players) p.iframes = Math.max(p.iframes, 2.4);
+    this.emit({ k: 'boss', name: head.name, look: bd.look, id: baseId, r: head.r, final: bd.final ? 1 : 0 });
   }
   spawnBossCopy(e, frac) {
     if (e.copy) return null;
@@ -1222,9 +1238,14 @@ export class Game {
     if (e.seg) { const head = this.enemies.find((h) => h.id === e.link); if (head) this.damageEnemy(head, dmg * 0.6, pid, noFlash); e.hitT = 0.13; return; }
     if (e.inv || e.shielded) { if (e.shielded) this.emit({ k: 'shieldhit', x: e.x, y: e.y }); return; }
     if (e.awake === false && e.type === 'mimic') return;
+    if (e.boss && e.spawnT > 0.3) return; // pendant l'intro du boss
+    const real = Math.min(dmg, Math.max(0, e.hp));
     e.hp -= dmg;
     if (!noFlash) e.hitT = 0.13;
     if (pid) e.lastHitBy = pid;
+    // chiffres de dégâts : regroupés par ennemi (au plus ~7 par seconde) pour ne pas inonder le réseau
+    e.dmgAcc = (e.dmgAcc || 0) + real;
+    if (e.hp <= 0 || this.time - (e.dmgT || -1) > 0.14) { this.emit({ k: 'dmg', x: Math.round(e.x), y: Math.round(e.y - e.r), n: Math.round(e.dmgAcc * 10) / 10, b: e.boss ? 1 : 0 }); e.dmgAcc = 0; e.dmgT = this.time; }
     if (e.hp <= 0) this.killEnemy(e, pid);
   }
 
@@ -1439,7 +1460,7 @@ export class Game {
           if ((e.x - pr.x) ** 2 + (e.y - pr.y) ** 2 > (e.r + pr.r) ** 2) continue;
           if (pr.hits.includes(e.id)) continue;
           // bouclier frontal
-          if (e.def.ai === 'shield' && e.face != null) {
+          if (e.def.ai === 'shield' && e.face != null && !(e.guardDown > 0)) {
             let da = Math.atan2(-pr.vy, -pr.vx) - e.face; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU;
             if (Math.abs(da) < 0.9) { this.emit({ k: 'shieldhit', x: pr.x, y: pr.y }); consumed = true; break; }
           }
@@ -1947,7 +1968,7 @@ export class Game {
         z: r1(e.z || 0), fd: r1(e.fade || 0), ch: e.champ || 0, rg: e.rage ? 1 : 0, bt: e.biting > 0 ? 1 : 0, vy: r1(e.vy), sp: e.spawnT > 0 ? r1(e.spawnT) : 0, ph: e.phase || 0,
         sg: e.seg ? 1 : 0, si: e.segI || 0, sh: e.shielded ? 1 : 0, cp: e.copy ? 1 : 0, aw: e.type === 'mimic' ? (e.awake ? 1 : 0) : 1,
         st: e.petrifyT > 0 ? 'p' : e.midasT > 0 ? 'g' : e.charmT > 0 ? 'c' : e.fearT > 0 ? 'f' : e.confuseT > 0 ? 'q' : 0,
-        fa: e.face != null ? r1(e.face) : null, aim: e.state === 'aim' ? r1(e.lock) : null,
+        fa: e.face != null ? r1(e.face) : null, gd: e.guardDown > 0 ? 1 : 0, aim: e.state === 'aim' ? r1(e.lock) : null,
       })),
       proj: this.projs.map((p) => [p.id, r1(p.x), r1(p.y), r1(p.r), p.c, p.team === 'p' ? 1 : 0, p.kind || '', p.col || '']),
       pbeams: this.pbeams.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.ang * 100) / 100, Math.round(b.len), b.w, r1(b.life / b.dur), b.c]),

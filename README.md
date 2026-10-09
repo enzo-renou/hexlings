@@ -14,6 +14,8 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 - **Potions** (les « pilules », touche R / L2) : 16 potions, couleurs mélangées à chaque run, on découvre leur effet en les buvant.
 - **13 biomes** (2 étages chacun, tirés au hasard), dont 3 nouveaux : Marais Putride, Ruines Ensablées, Horlogerie Arcanique. **~130 monstres**, **41 boss** (serpents à anneaux, jumeaux, boss protégés par des cristaux, boss avec des mains…) et des **boss finaux uniques** à l'étage 10.
 - **159 objets** dont de vraies armes qui changent la façon de tirer : **rayon chargé** (façon Azazel/Brimstone), laser continu, **anneau de sang** chargé, **lance-bombes**, couteau, ludovico… + **familiers**, objets **maudits** et **synergies**.
+- **Effets** : carte « VS » à l'arrivée de chaque boss, ralenti et zoom quand il meurt, chiffres de dégâts (désactivables), bord de l'écran qui bat en rouge quand il te reste un cœur, traces de pas dans la neige, le sable et la boue, caméra qui regarde devant toi dans les grandes salles.
+- **Équilibrage du mode Normal** : petits étages au début (comme Isaac) qui grandissent en descendant, pas de chevaliers à bouclier en solo (en multi, ils baissent leur bouclier pour tirer), au plus 1 monstre coriace (crapaud, crocodile…) par salle aux étages 1-2.
 - **Difficultés** (choisies avant la run, par le chef du salon en multi) :
   - **Normal** ;
   - **Difficile** : monstres et boss plus résistants, boss qui tirent plus vite ;
@@ -36,15 +38,15 @@ Tu incarnes un petit sorcier qui descend 10 étages générés au hasard : chaqu
 | Clavier (AZERTY) | Manette | Action |
 | --- | --- | --- |
 | ZQSD | Stick gauche | Se déplacer |
-| Flèches | Stick droit (ou A/B/X/Y) | Lancer des sorts |
+| Flèches | Stick droit (ou A/B/Y) | Lancer des sorts |
 | Espace | R2 | Sort spécial |
 | E | R1 | Poser une bombe |
 | A | L1 | Utiliser l'orbe |
 | R | L2 | Boire la potion |
-| & é " ' (1 2 3 4) | Croix | Émotes |
-| F | Clic stick droit | Signaler (« par ici ! ») |
+| & é " ' (1 2 3 4) | Flèches de la croix | Émotes |
+| F | Clic stick gauche | Signaler (« par ici ! ») |
 | Tab (maintenir) | Select | Carte de l'étage |
-| B ou 🎒 | Clic stick gauche | Inventaire |
+| B ou 🎒 | X (Xbox) / Carré (PS) | Inventaire |
 | Échap ou ⚙ | Start | Paramètres |
 
 Les menus se naviguent à la manette (croix ou stick, A valide, B revient).

@@ -126,6 +126,17 @@ export function renderAccount() {
   $('#acc-in').classList.toggle('hidden', !on);
   if (on) $('#acc-who').textContent = meta.account.name;
   $('#nav-account').textContent = on ? meta.account.name : 'Compte';
+  const t = meta.lastSync;
+  $('#acc-sync').textContent = meta.syncError ? `⚠ ${meta.syncError}` : t ? `Sauvegardé en ligne ✓ (${new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : 'Pas encore synchronisé.';
+  // le serveur garde-t-il vraiment les comptes ?
+  fetch('/health').then((r) => r.json()).then((h) => {
+    const w = $('#acc-warn');
+    const local = /^(localhost|127\.|192\.168\.|10\.)/.test(location.hostname);
+    let msg = '';
+    if (local) msg = 'Tu joues sur un serveur local (ton PC) : les comptes sont enregistrés sur ce PC seulement. Pour retrouver ta progression partout, joue sur la version en ligne (Render).';
+    else if (h.store !== 'postgres') msg = 'Le serveur n’a pas de base de données : les comptes sont effacés à chaque redémarrage du serveur. Ajoute DATABASE_URL sur Render (voir le README).';
+    w.textContent = msg; w.classList.toggle('hidden', !msg);
+  }).catch(() => {});
 }
 export function wireAccount(onLogged) {
   const go = async (create) => {
@@ -143,4 +154,5 @@ export function wireAccount(onLogged) {
   $('#btn-register').onclick = () => go(true);
   $('#acc-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(false); });
   $('#btn-logout').onclick = () => { meta.logout(); renderAccount(); onLogged?.(); };
+  $('#btn-sync').onclick = async () => { await meta.syncFromCloud(); await meta.upload(); renderAccount(); onLogged?.(); };
 }

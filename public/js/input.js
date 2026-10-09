@@ -50,8 +50,8 @@ export const PAD_ACTIONS = [
   { id: 'emote3', label: 'Émote « ? »' },
   { id: 'emote4', label: 'Émote « ^^ »' },
 ];
-export const DEFAULT_PAD = { bomb: 5, orb: 4, potion: 6, spell: 7, map: 8, pause: 9, inv: 10, ping: 11, emote1: 12, emote2: 15, emote3: 13, emote4: 14 };
-const PAD_NAMES = ['A', 'B', 'X', 'Y', 'L1', 'R1', 'L2', 'R2', 'Select', 'Start', 'Clic G', 'Clic D', 'Croix ↑', 'Croix ↓', 'Croix ←', 'Croix →', 'Guide'];
+export const DEFAULT_PAD = { bomb: 5, orb: 4, potion: 6, spell: 7, map: 8, pause: 9, inv: 2, ping: 10, emote1: 12, emote2: 15, emote3: 13, emote4: 14 };
+const PAD_NAMES = ['A (Croix)', 'B (Rond)', 'X (Carré)', 'Y (Triangle)', 'L1', 'R1', 'L2', 'R2', 'Select', 'Start', 'Clic G', 'Clic D', 'Flèche ↑', 'Flèche ↓', 'Flèche ←', 'Flèche →', 'Guide'];
 export const padLabel = (i) => (i == null ? '—' : PAD_NAMES[i] || 'Bouton ' + i);
 
 let layout = null;

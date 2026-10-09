@@ -134,7 +134,9 @@ export const meta = {
     for (const [k, v] of Object.entries(b.talents)) talents[k] = Math.max(talents[k] || 0, v);
     this.data = {
       ...a,
-      runs: max('runs'), wins: max('wins'), deaths: max('deaths'), bestFloor: max('bestFloor'), kills: max('kills'), shards: max('shards'),
+      runs: max('runs'), wins: max('wins'), deaths: max('deaths'), bestFloor: max('bestFloor'), kills: max('kills'),
+      // les éclats se dépensent : on garde ceux de la sauvegarde la plus récente
+      shards: (b.updated || 0) > (a.updated || 0) ? b.shards || 0 : a.shards || 0,
       unlocked: uniq([...a.unlocked, ...b.unlocked]), seen: uniq([...a.seen, ...b.seen]), relics, talents,
       achievements: uniq([...a.achievements, ...b.achievements]), seenEnemies: uniq([...a.seenEnemies, ...b.seenEnemies]), seenBosses: uniq([...a.seenBosses, ...b.seenBosses]),
       stats: { poop: Math.max(a.stats.poop, b.stats.poop), secrets: Math.max(a.stats.secrets, b.stats.secrets), winChars: uniq([...a.stats.winChars, ...b.stats.winChars]), bestScore: Math.max(a.stats.bestScore, b.stats.bestScore) },
@@ -163,7 +165,7 @@ export const meta = {
   logout() { this.account = null; try { localStorage.removeItem(ACC); } catch { /* ignore */ } this.onChange?.(); },
   async syncFromCloud() {
     if (!this.account) return;
-    try { const r = await this.api('/api/me'); if (r.save) this.merge(r.save); this.save(); }
+    try { const r = await this.api('/api/me'); if (r.save) this.merge(r.save); this.lastSync = Date.now(); this.syncError = null; this.save(); }
     catch (e) { if (/connecté/.test(e.message)) this.logout(); }
   },
   queueUpload() {
@@ -173,6 +175,31 @@ export const meta = {
   },
   async upload() {
     if (!this.account) return;
-    try { await this.api('/api/save', { method: 'PUT', body: { save: this.data } }); } catch { /* hors ligne : on réessaiera */ }
+    clearTimeout(this._up); this._up = null;
+    try {
+      await this.api('/api/save', { method: 'PUT', body: { save: this.data } });
+      this.lastSync = Date.now(); this.syncError = null;
+    } catch (e) {
+      this.syncError = /connecté/.test(e.message) ? 'Session expirée : reconnecte-toi' : 'Serveur injoignable, nouvel essai bientôt';
+      if (/connecté/.test(e.message)) this.logout();
+      else this._up = setTimeout(() => this.upload(), 15000);
+    }
+  },
+  // en fermant l'onglet : envoie la sauvegarde même si la page se ferme
+  flush() {
+    if (!this.account || !this._up) return;
+    clearTimeout(this._up); this._up = null;
+    try {
+      fetch('/api/save', { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.account.token }, body: JSON.stringify({ save: this.data }) });
+    } catch { /* ignore */ }
   },
 };
+
+// sauvegarde envoyée avant de quitter la page, et récupérée en revenant dessus
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => meta.flush());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') meta.flush();
+    else meta.syncFromCloud();
+  });
+}

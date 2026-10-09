@@ -16,12 +16,12 @@ export const MORE_ENEMIES = {
   shroomling: { name: 'Champignonnet', hp: 6, r: 10, speed: 0, ai: 'hopper', fire: 1.4, reach: 110, landRing: 4, shot: 'spore', shotSpd: 140, weight: 2, splat: '#b04a3a' },
   wasp:       { name: 'Guêpe', hp: 5, r: 9, speed: 150, ai: 'swarm', fly: true, weight: 3, splat: '#ffd34a' },
   // --- Marais (nouveau biome)
-  toad:       { name: 'Crapaud Venimeux', hp: 14, r: 14, speed: 0, ai: 'hopper', fire: 1.5, reach: 170, landRing: 6, shot: 'acid', shotSpd: 150, jumpH: 50, weight: 3, splat: '#5a8a2a' },
+  toad:       { name: 'Crapaud Venimeux', hp: 12, r: 14, speed: 0, ai: 'hopper', fire: 2.2, reach: 150, landRing: 5, shot: 'acid', shotSpd: 130, jumpH: 50, weight: 2, tough: true, splat: '#5a8a2a' },
   leech:      { name: 'Sangsue', hp: 10, r: 11, speed: 70, ai: 'trail', creep: 'acid', weight: 2, splat: '#3a2a2a' },
   bogzombie:  { name: 'Noyé des Marais', hp: 20, r: 14, speed: 40, ai: 'zombie', deathCreep: 'acid', weight: 2, splat: '#3a5a2a' },
   mosquito:   { name: 'Moustique Géant', hp: 7, r: 10, speed: 115, ai: 'erratic', fly: true, fire: 2.2, shotSpd: 220, shot: 'blood', weight: 2, splat: '#8a1a1a' },
-  croc:       { name: 'Crocodile Mage', hp: 22, r: 16, speed: 50, ai: 'dasher', dash: 380, dashRing: 6, shot: 'acid', shotSpd: 140, weight: 1, splat: '#3a6a3a' },
-  swampwitch: { name: 'Sorcière des Marais', hp: 18, r: 13, speed: 60, ai: 'caster', fire: 3, summon: 'toad', weight: 1, splat: '#5a2a4a' },
+  croc:       { name: 'Crocodile Mage', hp: 18, r: 16, speed: 50, ai: 'dasher', dash: 340, dashRing: 4, tough: true, shot: 'acid', shotSpd: 140, weight: 1, splat: '#3a6a3a' },
+  swampwitch: { name: 'Sorcière des Marais', hp: 18, r: 13, speed: 60, ai: 'caster', fire: 3, tough: true, summon: 'toad', weight: 1, splat: '#5a2a4a' },
   // --- Cimetière
   banshee:    { name: 'Banshee', hp: 14, r: 13, speed: 0, ai: 'blinker', fly: true, phase: true, fire: 2.2, shotSpd: 230, shot: 'ice', n: 3, weight: 2, splat: 'ecto', glow: '#8ad8ff' },
   skeleton:   { name: 'Squelette Guerrier', hp: 16, r: 13, speed: 75, ai: 'chase', deathRing: 4, shot: 'bone', weight: 3, splat: 'bones' },
