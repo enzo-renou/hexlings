@@ -51,72 +51,87 @@ export function ramp(hex) {
 const SHADE_T = [-0.12, 0.2, 0.52, 0.8]; // seuils entre les 5 tons
 
 export class SpriteBuilder {
-  constructor(w, h) {
-    this.w = w; this.h = h;
-    const n = w * h;
+  // w, h : taille « dessinée » ; k : densité de pixels (k = 2/3 -> chaque pixel du sprite
+  // tombe exactement sur un pixel de la grille du jeu)
+  constructor(w, h, k = 1) {
+    this.w = w; this.h = h; this.k = k;
+    this.W = Math.max(1, Math.ceil(w * k)); this.H = Math.max(1, Math.ceil(h * k));
+    const n = this.W * this.H;
     this.col = new Array(n).fill(null); // couleur de base (hex) par pixel
     this.nx = new Float32Array(n); this.ny = new Float32Array(n); this.nz = new Float32Array(n);
     this.layer = new Int16Array(n).fill(-1);
     this.flat = new Uint8Array(n);       // 1 = pas d'ombrage (détail), 2 = lumineux (yeux, magie)
     this.L = 0;
   }
-  _put(x, y, c, nx, ny, nz, flat = 0, sameLayer = false) {
-    x |= 0; y |= 0;
-    if (x < 0 || y < 0 || x >= this.w || y >= this.h) return;
-    const i = y * this.w + x;
+  // (X, Y) : pixel de la grille finale
+  _put(X, Y, c, nx, ny, nz, flat = 0, sameLayer = false) {
+    X |= 0; Y |= 0;
+    if (X < 0 || Y < 0 || X >= this.W || Y >= this.H) return;
+    const i = Y * this.W + X;
     this.col[i] = c; this.nx[i] = nx; this.ny[i] = ny; this.nz[i] = nz; this.flat[i] = flat;
     this.layer[i] = sameLayer ? this.L - 1 : this.L;
   }
+  // point dessiné (coordonnées « dessinées ») -> pixel de la grille
+  _px(x, y) { return [Math.floor((x + 0.5) * this.k), Math.floor((y + 0.5) * this.k)]; }
+  _range(a, b) { return [Math.floor(a * this.k), Math.ceil(b * this.k)]; }
   next() { this.L++; return this; }
   // ellipse bombée (corps, têtes, yeux...)
   ell(cx, cy, rx, ry, c, o = {}) {
-    const rot = o.rot || 0, cs = Math.cos(rot), sn = Math.sin(rot), z = o.z ?? 1;
+    const rot = o.rot || 0, cs = Math.cos(rot), sn = Math.sin(rot), z = o.z ?? 1, k = this.k;
     const R = Math.max(rx, ry) + 1;
-    for (let y = Math.floor(cy - R); y <= Math.ceil(cy + R); y++) for (let x = Math.floor(cx - R); x <= Math.ceil(cx + R); x++) {
-      const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+    const [y0, y1] = this._range(cy - R, cy + R), [x0, x1] = this._range(cx - R, cx + R);
+    let any = false;
+    for (let Y = y0; Y <= y1; Y++) for (let X = x0; X <= x1; X++) {
+      const px = (X + 0.5) / k, py = (Y + 0.5) / k;
+      const dx = px - cx, dy = py - cy;
       const u = (dx * cs + dy * sn) / rx, v = (-dx * sn + dy * cs) / ry;
       const r2 = u * u + v * v;
       if (r2 > 1) continue;
-      if (o.cut && o.cut(x, y, u, v)) continue;
+      if (o.cut && o.cut(Math.floor(px), Math.floor(py), u, v)) continue;
       const nz = Math.sqrt(1 - r2) * z;
-      // normale retournée dans le repère du sprite
       const wx = u * cs - v * sn, wy = u * sn + v * cs;
       const m = Math.hypot(wx, wy, nz) || 1;
-      this._put(x, y, c, wx / m, wy / m, nz / m, o.flat || 0);
+      this._put(X, Y, c, wx / m, wy / m, nz / m, o.flat || 0); any = true;
     }
+    // trop petite pour la grille : on garde au moins un pixel (yeux, reflets...)
+    if (!any && !o.cut) { const [X, Y] = [Math.floor(cx * k), Math.floor(cy * k)]; this._put(X, Y, c, 0, 0, 1, o.flat || 0); }
     return this.next();
   }
   // capsule : membres, cornes, queues (rayon variable de r1 à r2)
   cap(x1, y1, x2, y2, r1, c, r2 = r1, o = {}) {
-    const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy || 1;
+    const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy || 1, k = this.k;
     const R = Math.max(r1, r2) + 1;
-    for (let y = Math.floor(Math.min(y1, y2) - R); y <= Math.ceil(Math.max(y1, y2) + R); y++) for (let x = Math.floor(Math.min(x1, x2) - R); x <= Math.ceil(Math.max(x1, x2) + R); x++) {
-      const px = x + 0.5, py = y + 0.5;
+    const [Y0, Y1] = this._range(Math.min(y1, y2) - R, Math.max(y1, y2) + R), [X0, X1] = this._range(Math.min(x1, x2) - R, Math.max(x1, x2) + R);
+    // rayon minimal d'un demi-pixel de la grille pour que les traits fins restent continus
+    const rmin = 0.5 / k;
+    for (let Y = Y0; Y <= Y1; Y++) for (let X = X0; X <= X1; X++) {
+      const px = (X + 0.5) / k, py = (Y + 0.5) / k;
       let t = ((px - x1) * dx + (py - y1) * dy) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const qx = x1 + dx * t, qy = y1 + dy * t, r = r1 + (r2 - r1) * t;
+      const qx = x1 + dx * t, qy = y1 + dy * t, r = Math.max(rmin, r1 + (r2 - r1) * t);
       const ex = px - qx, ey = py - qy, d = Math.hypot(ex, ey);
       if (d > r) continue;
       const u = ex / r, v = ey / r, nz = Math.sqrt(Math.max(0, 1 - u * u - v * v)) * (o.z ?? 1);
       const m = Math.hypot(u, v, nz) || 1;
-      this._put(x, y, c, u / m, v / m, nz / m, o.flat || 0);
+      this._put(X, Y, c, u / m, v / m, nz / m, o.flat || 0);
     }
     return this.next();
   }
   // polygone biseauté (armures, cristaux, bois...) : pts = [[x,y],...]
   poly(pts, c, o = {}) {
-    const bevel = o.bevel ?? 2.5;
+    const bevel = o.bevel ?? 2.5, k = this.k;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     const n = pts.length;
-    for (let y = Math.floor(y0); y <= Math.ceil(y1); y++) for (let x = Math.floor(x0); x <= Math.ceil(x1); x++) {
-      const px = x + 0.5, py = y + 0.5;
+    const [Y0, Y1] = this._range(y0, y1), [X0, X1] = this._range(x0, x1);
+    let any = false;
+    for (let Y = Y0; Y <= Y1; Y++) for (let X = X0; X <= X1; X++) {
+      const px = (X + 0.5) / k, py = (Y + 0.5) / k;
       let inside = false;
       for (let i = 0, j = n - 1; i < n; j = i++) {
         const [xi, yi] = pts[i], [xj, yj] = pts[j];
         if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
       }
       if (!inside) continue;
-      // distance au bord le plus proche -> biseau
       let best = Infinity, bnx = 0, bny = 0;
       for (let i = 0, j = n - 1; i < n; j = i++) {
         const [ax, ay] = pts[j], [bx, by] = pts[i];
@@ -126,20 +141,21 @@ export class SpriteBuilder {
         if (d < best) { best = d; bnx = (qx - px) / (d || 1); bny = (qy - py) / (d || 1); }
       }
       let nx = 0, ny = 0, nz = 1;
-      if (best < bevel) { const k = 1 - best / bevel; nx = bnx * k; ny = bny * k; nz = 1 - k * 0.6; }
+      if (best < bevel) { const kk = 1 - best / bevel; nx = bnx * kk; ny = bny * kk; nz = 1 - kk * 0.6; }
       if (o.tilt) { nx += o.tilt[0]; ny += o.tilt[1]; }
       const m = Math.hypot(nx, ny, nz) || 1;
-      this._put(x, y, c, nx / m, ny / m, nz / m, o.flat || 0);
+      this._put(X, Y, c, nx / m, ny / m, nz / m, o.flat || 0); any = true;
     }
+    if (!any) { const [X, Y] = this._px((x0 + x1) / 2 - 0.5, (y0 + y1) / 2 - 0.5); this._put(X, Y, c, 0, 0, 1, o.flat || 0); }
     return this.next();
   }
   rect(x, y, w, h, c, o = {}) { return this.poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], c, o); }
   // détails non ombrés
-  dot(x, y, c, flat = 1) { this._put(x, y, c, 0, 0, 1, flat, true); return this; }
-  dots(list, c, flat = 1) { for (const [x, y] of list) this._put(x, y, c, 0, 0, 1, flat, true); return this; }
+  dot(x, y, c, flat = 1) { const [X, Y] = this._px(x, y); this._put(X, Y, c, 0, 0, 1, flat, true); return this; }
+  dots(list, c, flat = 1) { for (const [x, y] of list) this.dot(x, y, c, flat); return this; }
   line(x1, y1, x2, y2, c, flat = 1) {
-    const n = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1), 1);
-    for (let i = 0; i <= n; i++) this._put(Math.round(x1 + ((x2 - x1) * i) / n), Math.round(y1 + ((y2 - y1) * i) / n), c, 0, 0, 1, flat, true);
+    const n = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1), 1) * 2;
+    for (let i = 0; i <= n; i++) this.dot(x1 + ((x2 - x1) * i) / n, y1 + ((y2 - y1) * i) / n, c, flat);
     return this;
   }
   // petit œil expressif : blanc + pupille + reflet
@@ -158,7 +174,7 @@ export class SpriteBuilder {
   }
   // rendu final -> canvas
   render(opts = {}) {
-    const { w, h } = this;
+    const w = this.W, h = this.H;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const g = c.getContext('2d');
@@ -196,7 +212,8 @@ export class SpriteBuilder {
       const rgb = out[i];
       if (!rgb) continue;
       let [r, gg, b] = rgb;
-      if (edge[i]) { const R0 = ramp(this.col[i])[0]; r = R0[0] * 0.85; gg = R0[1] * 0.85; b = R0[2] * 0.85; }
+      // sur la grille du jeu (k < 1) le trait intérieur est plus doux pour ne pas noircir les petits sprites
+      if (edge[i]) { const R0 = ramp(this.col[i])[this.k < 1 ? 1 : 0]; const m = this.k < 1 ? 0.95 : 0.85; r = R0[0] * m; gg = R0[1] * m; b = R0[2] * m; }
       if (opts.flash) { const k = opts.flashK ?? 0.65; r += (opts.flash[0] - r) * k; gg += (opts.flash[1] - gg) * k; b += (opts.flash[2] - b) * k; }
       d[i * 4] = r; d[i * 4 + 1] = gg; d[i * 4 + 2] = b; d[i * 4 + 3] = 255;
     }

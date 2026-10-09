@@ -1504,7 +1504,7 @@ export class Game {
     this.emit({ k: 'hit', x: pr.x, y: pr.y, c: pr.c });
     if (!e.boss && !e.def.heavy) {
       const sp = Math.hypot(pr.vx, pr.vy) || 1;
-      const k = f.knockback ? 420 : 110;
+      const k = f.knockback ? 420 : 150; // les monstres dérapent un peu quand on les touche
       e.kx += (pr.vx / sp) * k; e.ky += (pr.vy / sp) * k;
     }
     if (owner) this.onHitEffects(e, owner, dmg);

@@ -25,8 +25,8 @@ const WW = 40, WH = 52, WAX = 20, WAY = 47;
 function lighten(hex, k) { const [r, g, b] = hexRgb(hex); const f = (v) => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0'); return '#' + f(r) + f(g) + f(b); }
 function darken(hex, k) { const [r, g, b] = hexRgb(hex); const f = (v) => Math.round(v * (1 - k)).toString(16).padStart(2, '0'); return '#' + f(r) + f(g) + f(b); }
 
-function buildWizard(ch, dir, frame, opts = {}) {
-  const b = new SpriteBuilder(WW, WH);
+function buildWizard(ch, dir, frame, opts = {}, k = 1) {
+  const b = new SpriteBuilder(WW, WH, k);
   const robe = ch.robe, hat = ch.hat, trim = ch.trim, skin = ch.skin, hair = ch.hair || darken(ch.hat, 0.45);
   const step = opts.moving ? [0, 1, 0, -1][frame] : 0;
   const bob = opts.moving && frame % 2 ? -1 : 0;
@@ -76,7 +76,17 @@ function buildWizard(ch, dir, frame, opts = {}) {
   else { b.ell(hx - 6.5, hy + 1, 2.6, 5, hair); b.ell(hx + 6.5, hy + 1, 2.6, 5, hair); b.ell(hx, hy - 4.5, 7, 2.8, hair); }
   if (ch.beard && !back) { b.ell(hx + (side ? 3 : 0), hy + 5, side ? 4 : 5.5, 4, ch.beard); }
   // visage
-  if (!back) {
+  if (!back && b.k < 1) {
+    // visage dessiné directement sur la grille du jeu (yeux de 1x2 pixels bien lisibles)
+    const eyeC = opts.ghost ? '#8a8ab8' : '#1a0c24';
+    const P = (x, y, c, f = 1) => b._put(x, y, c, 0, 0, 1, f, true);
+    const HX = Math.floor(hx * b.k), HY = Math.floor((hy + 0.5) * b.k);
+    if (side) { P(HX + 3, HY, eyeC); P(HX + 3, HY + 1, eyeC); P(HX + 2, HY + 2, '#ff8a9a'); }
+    else {
+      for (const ex of [HX - 2, HX + 2]) { P(ex, HY, eyeC); P(ex, HY + 1, eyeC); }
+      P(HX - 3, HY + 2, '#ff8a9a'); P(HX + 3, HY + 2, '#ff8a9a');
+    }
+  } else if (!back) {
     const eyeC = opts.ghost ? '#8a8ab8' : '#241430';
     if (side) {
       b.dot(hx + 4, hy, eyeC); b.dot(hx + 4, hy + 1, eyeC); b.dot(hx + 4, hy - 1, '#ffffff', 2);
@@ -108,28 +118,30 @@ export function drawWizardSprite(c, x, y, ch, o = {}) {
   const flip = dir === 'side' && fx < 0;
   const frame = o.moving ? Math.floor((o.t || 0) * 9) % 4 : 0;
   const flash = o.ghost ? '#c8d8ff' : null;
-  const key = `wiz|${ch.name}|${dir}|${frame}|${o.moving ? 1 : 0}|${flash || ''}`;
-  const spr = cached(key, () => buildWizard(ch, dir, frame, { moving: o.moving, flash, flashK: 0.55, ghost: o.ghost }));
+  // pk : densité de pixels du calque (2/3 dans le monde : un pixel du sprite = un pixel du jeu)
+  const pk = c.pxk || 1;
+  const key = `wiz|${ch.name}|${dir}|${frame}|${o.moving ? 1 : 0}|${flash || ''}|${pk}`;
+  const spr = cached(key, () => buildWizard(ch, dir, frame, { moving: o.moving, flash, flashK: 0.55, ghost: o.ghost }, pk));
   c.save();
-  c.translate(Math.round(x), Math.round(y));
+  c.translate(Math.round(x * pk) / pk, Math.round(y * pk) / pk);
   if (o.rot) c.rotate(o.rot);
   if (o.alpha != null) c.globalAlpha *= o.alpha;
   const sc = o.scale || 1;
   if (!o.ghost && !o.noShadow && !o.fly) { c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.ellipse(0, 12, 12 * sc, 4.5 * sc, 0, 0, Math.PI * 2); c.fill(); }
   if (o.fly && !o.ghost) { c.fillStyle = 'rgba(0,0,0,0.25)'; c.beginPath(); c.ellipse(0, 18, 10 * sc, 3.5 * sc, 0, 0, Math.PI * 2); c.fill(); }
   if (flip) c.scale(-1, 1);
-  if (o.cast) c.scale(1 + o.cast * 0.05, 1 - o.cast * 0.04);
-  c.scale(sc, sc);
+  if (o.cast && pk === 1) c.scale(1 + o.cast * 0.05, 1 - o.cast * 0.04);
+  if (sc !== 1) c.scale(sc, sc);
   c.imageSmoothingEnabled = false;
   // y : le centre du corps du joueur (pieds ~ y+12)
-  c.drawImage(spr, -WAX, 12 - WAY);
+  c.drawImage(spr, -Math.round(WAX * pk) / pk, Math.round((12 - WAY) * pk) / pk, spr.width / pk, spr.height / pk);
   c.restore();
 }
 
 // ------------------------------------------------------------ monstres et boss
-function buildMonster(def, kind, frame, variant, flash) {
+function buildMonster(def, kind, frame, variant, flash, k = 1) {
   const spec = def;
-  const b = new SpriteBuilder(spec.w, spec.h);
+  const b = new SpriteBuilder(spec.w, spec.h, k);
   spec.draw(b, frame, variant || {});
   return b.render({ flash: flash ? flashRgb(flash) : null, flashK: 0.62 });
 }
@@ -150,17 +162,20 @@ export function drawMonster(c, e, t, o = {}) {
   const state = spec.state ? spec.state(e) : 0;
   const flash = o.flash > 0.3 ? o.flashCol || '#ffffff' : null;
   const tintKey = o.tintName || '';
-  const key = `${boss ? 'B' : 'M'}|${e.t}|${e.sg ? 'seg' + (e.si || 0) : ''}|${frame}|${state}|${flash || ''}|${tintKey}`;
-  const spr = cached(key, () => buildMonster(spec, e.t, frame, { state, tint: o.tintName ? { name: o.tintName } : null, seg: e.si }, flash));
   const scale = e.r / (spec.r || e.r);
+  // le sprite est construit directement à sa taille finale, sur la grille de pixels du jeu
+  const pk = c.pxk || 1;
+  const kk = pk === 1 ? 1 : Math.max(0.2, Math.round(pk * scale * 24) / 24);
+  const key = `${boss ? 'B' : 'M'}|${e.t}|${e.sg ? 'seg' + (e.si || 0) : ''}|${frame}|${state}|${flash || ''}|${tintKey}|${kk}`;
+  const spr = cached(key, () => buildMonster(spec, e.t, frame, { state, tint: o.tintName ? { name: o.tintName } : null, seg: e.si }, flash, kk));
   const x = o.x ?? e.x, y = o.y ?? e.y;
   c.save();
-  c.translate(Math.round(x), Math.round(y));
+  c.translate(Math.round(x * pk) / pk, Math.round(y * pk) / pk);
   const face = o.L ? o.L.face : 1;
   if (spec.flip !== false && face < 0) c.scale(-1, 1);
-  c.scale(scale, scale);
   c.imageSmoothingEnabled = false;
-  c.drawImage(spr, -spec.ax, -spec.ay);
+  if (pk === 1) { c.scale(scale, scale); c.drawImage(spr, -spec.ax, -spec.ay); }
+  else c.drawImage(spr, -Math.round(spec.ax * kk) / pk, -Math.round(spec.ay * kk) / pk, spr.width / pk, spr.height / pk);
   c.restore();
 }
 
@@ -192,7 +207,27 @@ export function itemIconURL(id) {
   urlCache.set(id, url);
   return url;
 }
+const iconK = new Map();
 export function drawItemIcon(c, id, x, y, size = 24) {
+  const pk = c.pxk || 1;
+  if (pk !== 1) {
+    // dans le monde : icône construite sur la grille de pixels du jeu
+    const kk = Math.max(0.3, Math.round(pk * (size / 26) * 24) / 24);
+    const key = id + '|' + kk;
+    let cv2 = iconK.get(key);
+    if (cv2 === undefined) {
+      const it = ITEMS[id];
+      cv2 = null;
+      if (it && it.icon && ICON_ART[it.icon[0]]) { const b = new SpriteBuilder(26, 26, kk); ICON_ART[it.icon[0]](b, it.icon[1], it.icon[2] || it.icon[1]); cv2 = b.render(); }
+      iconK.set(key, cv2);
+    }
+    if (cv2) {
+      c.save(); c.imageSmoothingEnabled = false;
+      c.drawImage(cv2, Math.round(x * pk - cv2.width / 2) / pk, Math.round(y * pk - cv2.height / 2) / pk, cv2.width / pk, cv2.height / pk);
+      c.restore();
+      return;
+    }
+  }
   const cv = itemIconCanvas(id);
   if (cv) {
     const s = Math.max(1, Math.round(size / 26 * 2) / 2);

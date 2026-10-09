@@ -19,6 +19,11 @@ export { drawHeart };
 const R = 1;
 const AW = VIEW_W, AH = VIEW_H; // 720 x 432 : la fenêtre de jeu
 const MS = 2;                    // agrandissement à l'écran (pixels nets)
+// Grille de pixels unique pour tout le monde du jeu (sol, murs, sorciers, monstres, objets, effets) :
+// 480 x 288 pixels, chacun affiché en 3x3 à l'écran. PX = pixels de grille par unité du monde.
+const PX = 2 / 3;
+const GW = Math.round(AW * PX), GH = Math.round(AH * PX);
+const snapPx = (v) => Math.round(v * PX) / PX;
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -71,19 +76,20 @@ export class Renderer {
     const mk = (w, h, read) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.ctx = c.getContext('2d', read ? { willReadFrequently: true } : undefined); return c; };
     this.mk = mk;
     this.bg = mk(AW, AH);
-    this.dec = mk(AW, AH, true);
-    this.tmp = mk(AW, AH, true);
-    this.ent = mk(AW, AH, true);
-    this.fx = mk(AW / 2, AH / 2, true);
-    this.light = mk(AW / 2, AH / 2, true);
-    this.world = mk(AW, AH);
-    this.prev = mk(AW, AH);
+    this.dec = mk(GW, GH, true);
+    this.tmp = mk(GW, GH, true);
+    this.ent = mk(GW, GH, true);
+    this.fx = mk(GW, GH, true);
+    this.light = mk(GW, GH, true);
+    this.world = mk(GW, GH);
+    this.prev = mk(GW, GH);
+    this.ent.ctx.pxk = PX; this.fx.ctx.pxk = PX;
     this.hud = mk(VIEW_W, VIEW_H, true);
     this.ovl = mk(VIEW_W, VIEW_H, true);
     this.lctx = this.light.ctx;
     this.shakeOn = true;
     this.highlight = 'arrow';
-    this.dmgNumbers = true; this.dnums = []; this.prints = []; this.stepAcc = new Map(); this.slow = null; this.zoomK = 0; this.lookX = 0; this.lookY = 0; this.vs = null; // mise en valeur de son sorcier en multi : off | ring | arrow
+    this.dmgNumbers = true; this.dnums = []; this.prints = []; this.stepAcc = new Map(); this.slow = null; this.zoomK = 0; this.lookX = 0; this.lookY = 0; this.vs = null; this.flyers = []; this.hats = []; // mise en valeur de son sorcier en multi : off | ring | arrow
     this.camX = 0; this.camY = 0;
     this.reset();
   }
@@ -111,6 +117,8 @@ export class Renderer {
     const k = this.slow.t / this.slow.dur;
     return k < 0.7 ? this.slow.k : this.slow.k + (1 - this.slow.k) * ((k - 0.7) / 0.3);
   }
+  // un objet ramassé file vers son compteur en haut à gauche
+  fly(kind, x, y) { this.flyers.push({ kind, sx: x - this.camX, sy: y - this.camY - 10, t: 0 }); if (this.flyers.length > 30) this.flyers.shift(); }
   ring(x, y, r, color, life = 0.35, w = 3) { this.parts.push({ ring: true, x, y, r, color, life, max: life, w }); }
   float(x, y, text, color, life = 1) { this.floats.push({ x, y, text, life, color }); }
 
@@ -167,8 +175,8 @@ export class Renderer {
       case 'needkey': this.float(ev.x, ev.y - 34, 'Il faut une clé !', '#ffd34a', 1.2); break;
       case 'doorunlock': { const p = P(ev.pid); this.float(p?.x || 360, (p?.y || 216) - 34, 'Déverrouillé !', '#ffd34a', 1.2); break; }
       case 'cursedoor': this.float(ev.x, ev.y - 44, 'La porte maudite te griffe !', '#ff5a6a', 1.6); break;
-      case 'gotbomb': this.float(ev.x, ev.y - 14, '+1 bombe', '#e8e0d0', 0.8); break;
-      case 'gotkey': this.float(ev.x, ev.y - 14, '+1 clé', '#ffd34a', 0.8); break;
+      case 'gotbomb': if (ev.pid === meId) this.fly('bomb', ev.x, ev.y); else this.float(ev.x, ev.y - 14, '+1 bombe', '#e8e0d0', 0.8); break;
+      case 'gotkey': if (ev.pid === meId) this.fly('key', ev.x, ev.y); else this.float(ev.x, ev.y - 14, '+1 clé', '#ffd34a', 0.8); break;
       case 'gotsoul': this.float(ev.x, ev.y - 20, '+ cœur d’âme', '#7ac8ff', 0.9); this.burst(ev.x, ev.y, 14, '#7ac8ff', 90, 0.7, 3, { up: -40, glow: true }); break;
       case 'gotblack': this.float(ev.x, ev.y - 20, '+ cœur noir', '#b08ac8', 0.9); this.burst(ev.x, ev.y, 14, '#4a2a5a', 90, 0.7, 3, { up: -40 }); break;
       case 'blackblast': this.flashC = { c: '#2a0a3a', a: 0.55 }; this.shake = 14; this.ring(ev.x, ev.y, 260, '#6a2a8a', 0.6, 6); this.toast('Cœur noir brisé !', 'Les ténèbres frappent tous les ennemis', '#b08ac8', '🖤', true); break;
@@ -217,11 +225,21 @@ export class Renderer {
         this.float(ev.x, ev.y - 30, '-♥', '#ff4a6a', 0.8);
         if (ev.pid === meId) { this.shake = Math.max(this.shake, 8); this.flash = 0.3; }
         break;
-      case 'pdie': this.burst(ev.x, ev.y, 34, '#e8304a', 210, 0.9, 4, { g: 200 }); if (ev.pid === meId) { this.slow = { t: 0, dur: 1.2, k: 0.3 }; this.zoomK = 0.18; this.flashC = { c: '#3a0010', a: 0.5 }; } this.toast(`${pname(ev.pid)} est tombé !`, snap.players.length > 1 ? 'Reste près de son fantôme pour le réanimer' : '', '#ff7a8a'); break;
+      case 'pdie': {
+        // le chapeau s'envole, l'âme s'échappe
+        const pp = P(ev.pid), ch = pp ? CHARACTERS[pp.c] : null;
+        if (ch) this.hats.push({ x: ev.x, y: ev.y - 26, vx: (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 40), vy: -260, rot: 0, vr: (Math.random() - 0.5) * 14, col: ch.hat, trim: ch.trim, t: 0, land: ev.y + 10 });
+        this.burst(ev.x, ev.y - 10, 24, ch ? ch.shot : '#ffffff', 60, 1.4, 3, { up: -70, glow: true });
+        this.ring(ev.x, ev.y, 50, '#ffffff', 0.5, 3);
+        this.burst(ev.x, ev.y, 34, '#e8304a', 210, 0.9, 4, { g: 200 });
+        if (ev.pid === meId) { this.slow = { t: 0, dur: 1.2, k: 0.3 }; this.zoomK = 0.18; this.flashC = { c: '#3a0010', a: 0.5 }; }
+        this.toast(`${pname(ev.pid)} est tombé !`, snap.players.length > 1 ? 'Reste près de son fantôme pour le réanimer' : '', '#ff7a8a');
+        break;
+      }
       case 'revive': this.burst(ev.x, ev.y, 44, '#ffb347', 230, 1, 4, { glow: true }); this.ring(ev.x, ev.y, 80, '#ffb347', 0.6, 5); this.toast('Plume de Phénix !', `${pname(ev.pid)} renaît de ses cendres`, '#ffb347'); break;
       case 'aegis': this.ring(ev.x, ev.y, 44, '#7ad1ff', 0.4, 4); this.float(ev.x, ev.y - 30, 'Égide !', '#7ad1ff', 1); break;
-      case 'heal': this.burst(ev.x, ev.y, 12, '#ff6a8a', 80, 0.7, 3, { up: -40, glow: true }); this.float(ev.x, ev.y - 20, '+♥', '#ff6a8a', 0.8); break;
-      case 'coin': this.burst(ev.x, ev.y, 8, '#ffd34a', 80, 0.45, 2.5, { up: -40, glow: true }); this.float(ev.x, ev.y - 14, '+1', '#ffd34a', 0.6); break;
+      case 'heal': this.burst(ev.x, ev.y, 12, '#ff6a8a', 80, 0.7, 3, { up: -40, glow: true }); if (ev.pid === meId) this.fly('heart', ev.x, ev.y); else this.float(ev.x, ev.y - 20, '+♥', '#ff6a8a', 0.8); break;
+      case 'coin': this.burst(ev.x, ev.y, 8, '#ffd34a', 80, 0.45, 2.5, { up: -40, glow: true }); if (ev.pid === meId) this.fly('coin', ev.x, ev.y); else this.float(ev.x, ev.y - 14, '+1', '#ffd34a', 0.6); break;
       case 'item': {
         const it = ITEMS[ev.item];
         if (ev.pid === meId) this.toast(it.name, it.desc, '#ffe08a', '', false, ev.item);
@@ -301,31 +319,33 @@ export class Renderer {
     const B = BIOMES[snap.biome] || BIOMES.castle;
     const room = snap.room, W = room.W, H = room.H, tiles = room.tiles;
     const PW = W * TILE, PH = H * TILE;
-    this.ensureSize(this.bg, PW, PH); this.ensureSize(this.dec, PW, PH); this.ensureSize(this.tmp, PW, PH);
+    const QW = Math.round(PW * PX), QH = Math.round(PH * PX);
+    this.ensureSize(this.bg, QW, QH); this.ensureSize(this.dec, QW, QH); this.ensureSize(this.tmp, QW, QH);
+    this.tmp.ctx.pxk = PX;
     this.decalsDirty = true;
     const seed = room.gx * 31 + room.gy * 17 + snap.floor * 101;
     const g = this.bg.ctx;
     g.setTransform(1, 0, 0, 1, 0, 0);
     // sol et murs texturés peints en basse résolution (grain « donjon rétro »), puis agrandis
     if (!this.lowBg) this.lowBg = document.createElement('canvas');
-    this.lowBg.width = PW / 2; this.lowBg.height = PH / 2;
+    this.lowBg.width = QW; this.lowBg.height = QH;
     const mask = tiles.map((t) => (t === T_WALL || t === T_DOOR ? 1 : 0));
-    paintRoom(this.lowBg.getContext('2d'), B, mask, W, H, TILE / 2, seed);
+    paintRoom(this.lowBg.getContext('2d'), B, mask, W, H, Math.round(TILE * PX), seed);
     g.imageSmoothingEnabled = false;
-    g.drawImage(this.lowBg, 0, 0, PW, PH);
+    g.drawImage(this.lowBg, 0, 0);
     const cells = SHAPES[room.shape] || SHAPES['1x1'];
     const t = this.tmp.ctx;
     // 1) décor plat par case (tapis, cercles runiques, fleurs...) : tramé, sans contour
-    t.setTransform(1, 0, 0, 1, 0, 0); t.clearRect(0, 0, PW, PH);
+    t.setTransform(1, 0, 0, 1, 0, 0); t.clearRect(0, 0, QW, QH); t.setTransform(PX, 0, 0, PX, 0, 0);
     cells.forEach(([cx, cy], ci) => {
       t.save(); t.translate(cx * 13 * TILE, cy * 7 * TILE);
       this.cellDeco(t, B, seed + ci * 7, room.type, ci === 0);
       t.restore();
     });
-    pixelize(t, PW, PH, { outline: false });
+    pixelize(t, QW, QH, { outline: false, dither: false });
     g.drawImage(this.tmp, 0, 0);
     // 2) objets en relief (rochers, fosses, détails des murs) : avec contour sombre
-    t.setTransform(1, 0, 0, 1, 0, 0); t.clearRect(0, 0, PW, PH);
+    t.setTransform(1, 0, 0, 1, 0, 0); t.clearRect(0, 0, QW, QH); t.setTransform(PX, 0, 0, PX, 0, 0);
     for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
       const tt = tiles[y * W + x];
       if (tt === T_ROCK) drawRock(t, x * TILE, y * TILE, B.rockStyle, B, hash(x + seed, y));
@@ -377,7 +397,7 @@ export class Renderer {
         for (let x = tx * TILE + 6; x < tx * TILE + TILE; x += 14) { t.fillRect(x, fy, 4, 20); t.beginPath(); t.moveTo(x - 2, fy); t.lineTo(x + 2, fy - 7); t.lineTo(x + 6, fy); t.fill(); }
       }
     }
-    pixelize(t, PW, PH, { outline: true });
+    pixelize(t, QW, QH, { outline: true });
     g.drawImage(this.tmp, 0, 0);
     // tuiles de lave : lumières
     this.lavaLights = [];
@@ -754,11 +774,13 @@ export class Renderer {
     c.beginPath(); c.ellipse(e.x, e.y + r * 0.75, r * 0.95 * shS, r * 0.32 * shS, 0, 0, TAU); c.fill();
     let sx = 1, sy = 1;
     const moving = Math.hypot(e.vx || 0, e.vy || 0) > 5;
-    if (!fly && moving && !e.sg) { const w = Math.sin(this.t * 12 + e.id); sx = 1 + w * 0.06; sy = 1 - w * 0.06; }
+    let hop = 0;
+    if (!fly && moving && !e.sg) hop = Math.sin(this.t * 12 + e.id) > 0.3 ? 1.5 : 0; // petit saut d'un pixel en marchant
     if (e.hit) { sx *= 1.18; sy *= 0.84; }
     if (e.w) { const p = Math.sin(this.t * 30) * 0.06; sx *= 1.08 + p; sy *= 0.92 - p; }
     const jit = e.hit ? (Math.random() - 0.5) * 4 : 0;
-    const x = e.x + jit, y = e.y - z - hover;
+    if (e.hit && !fly && !e.b && Math.random() < 0.5) this.parts.push({ x: e.x + (Math.random() - 0.5) * r, y: e.y + r * 0.7, vx: -(e.vx || 0) * 0.15 + (Math.random() - 0.5) * 30, vy: -15 - Math.random() * 20, life: 0.45, max: 0.45, color: 'rgba(200,190,175,0.7)', size: 3 });
+    const x = e.x + jit, y = e.y - z - hover - hop;
     const foot = y + r * 0.8;
     c.translate(x, foot); c.scale(sx * sc, sy * sc); c.translate(-x, -foot);
     if (e.ch && CHAMPIONS[e.ch]) {
@@ -1045,6 +1067,42 @@ export class Renderer {
     }
   }
 
+  // eau, lave, marais et vide animés dans les fosses
+  drawPitAnim(X, snap, B, lights) {
+    const st = B.pitStyle;
+    if (!['lava', 'water', 'swamp', 'void'].includes(st)) return;
+    const room = snap.room, W = room.W, tiles = room.tiles;
+    if (!tiles) return;
+    const x0 = Math.max(0, Math.floor(this.camX / TILE)), x1 = Math.min(W - 1, Math.ceil((this.camX + AW) / TILE));
+    const y0 = Math.max(0, Math.floor(this.camY / TILE)), y1 = Math.min(room.H - 1, Math.ceil((this.camY + AH) / TILE));
+    const t = this.t;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+      if (tiles[ty * W + tx] !== T_PIT) continue;
+      const px = tx * TILE, py = ty * TILE, h = hash(tx * 7 + 3, ty * 13 + 1);
+      if (st === 'lava') {
+        // bulles qui gonflent et éclatent + reflets mouvants
+        for (let i = 0; i < 2; i++) {
+          const ph = (t * 0.6 + h * 5 + i * 0.5) % 1;
+          const bx = px + 10 + ((h * 97 + i * 31) % 1) * 28, by = py + 14 + ((h * 53 + i * 17) % 1) * 22;
+          X.fillStyle = ph < 0.8 ? '#ffb347' : '#fff1a0';
+          X.beginPath(); X.arc(bx, by, ph < 0.8 ? 1.5 + ph * 3 : 5 * (1 - (ph - 0.8) * 5), 0, TAU); X.fill();
+        }
+        X.fillStyle = 'rgba(255,220,120,0.55)';
+        X.fillRect(px + 6 + Math.sin(t * 1.4 + h * 9) * 6, py + 20 + Math.cos(t + h * 4) * 8, 10, 2);
+      } else if (st === 'water' || st === 'swamp') {
+        X.fillStyle = st === 'water' ? 'rgba(200,235,255,0.55)' : 'rgba(170,210,110,0.5)';
+        for (let i = 0; i < 2; i++) {
+          const wx = px + 8 + ((t * 10 + h * 40 + i * 19) % 30), wy = py + 14 + i * 16 + Math.sin(t * 2 + h * 6 + i) * 2;
+          X.fillRect(wx, wy, 8, 1.5);
+        }
+        if (st === 'swamp') { const ph = (t * 0.5 + h * 3) % 1; if (ph > 0.7) { X.strokeStyle = 'rgba(190,230,120,0.7)'; X.lineWidth = 1.5; X.beginPath(); X.arc(px + 24, py + 24, (ph - 0.7) * 30, 0, TAU); X.stroke(); } }
+      } else if (st === 'void') {
+        const tw = Math.max(0, Math.sin(t * 2.5 + h * 20));
+        X.fillStyle = `rgba(220,200,255,${tw})`; X.fillRect(px + 8 + h * 30, py + 10 + ((h * 7) % 1) * 28, 2, 2);
+      }
+    }
+  }
+
   drawHazards(c, snap, lights) {
     const X = this.fx.ctx;
     for (const [id, kind, x, y, r, warn, col, t, life] of snap.hazards || []) {
@@ -1102,6 +1160,8 @@ export class Renderer {
     const rates = { dust: 6, leaves: 5, fog: 0.6, sparkle: 8, pages: 2, embers: 14, snow: 22, stars: 6, runes: 2, spores: 8, sand: 16, steam: 4 };
     const rate = rates[kind] || 0;
     const vx = this.camX, vy = this.camY;
+    // pluie dans le marais (en plus des spores)
+    if (B.deco === 'swamp') for (let i = 0; i < 2; i++) if (Math.random() < 30 * dt) this.ambient.push({ kind: 'rain', x: vx + Math.random() * (AW + 120) - 60, y: vy - 10, ty: vy + 30 + Math.random() * (AH - 40), life: 3, age: 0, s: Math.random() });
     if (Math.random() < rate * dt) {
       const a = { kind, x: vx + Math.random() * AW, y: vy + Math.random() * AH, life: 4 + Math.random() * 4, age: 0, s: Math.random(), rot: Math.random() * TAU };
       if (kind === 'leaves' || kind === 'snow' || kind === 'pages') { a.y = vy - 10; a.life = 8; }
@@ -1116,6 +1176,10 @@ export class Renderer {
       a.age += dt;
       c.globalAlpha = Math.max(0, Math.min(1, a.age, a.life - a.age));
       switch (a.kind) {
+        case 'rain':
+          if (a.y < a.ty) { a.y += 380 * dt; a.x -= 70 * dt; c.globalAlpha = 0.85; c.fillStyle = '#a8c8e8'; c.fillRect(a.x, a.y, 1.5, 7); }
+          else { a.splash = (a.splash || 0) + dt; c.globalAlpha = a.splash < 0.2 ? 0.85 : 0; c.strokeStyle = '#a8c8e8'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(a.x, a.y + 6, 2 + a.splash * 14, 1 + a.splash * 5, 0, 0, TAU); c.stroke(); if (a.splash > 0.3) a.age = a.life; }
+          break;
         case 'dust': a.x += Math.sin(a.age + a.s * 9) * 4 * dt; a.y -= 3 * dt; c.fillStyle = 'rgba(255,240,210,0.35)'; c.fillRect(a.x, a.y, 1.6, 1.6); break;
         case 'leaves':
           a.y += 28 * dt; a.x += Math.sin(a.age * 2 + a.s * 7) * 30 * dt; a.rot += dt * 2;
@@ -1151,10 +1215,10 @@ export class Renderer {
     if (snap.dark) dark = Math.min(0.97, dark + 0.5);
     L.setTransform(1, 0, 0, 1, 0, 0);
     L.globalCompositeOperation = 'source-over';
-    L.clearRect(0, 0, AW / 2, AH / 2);
+    L.clearRect(0, 0, GW, GH);
     L.fillStyle = `rgba(0,0,0,${dark})`;
-    L.fillRect(0, 0, AW / 2, AH / 2);
-    L.setTransform(R / 2, 0, 0, R / 2, -this.camX / 2, -this.camY / 2);
+    L.fillRect(0, 0, GW, GH);
+    L.setTransform(PX, 0, 0, PX, -this.camX * PX, -this.camY * PX);
     L.globalCompositeOperation = 'destination-out';
     for (const l of lights) {
       if (!this.inView(l.x, l.y, l.r)) continue;
@@ -1163,7 +1227,7 @@ export class Renderer {
       L.fillStyle = g; L.beginPath(); L.arc(l.x, l.y, l.r, 0, TAU); L.fill();
     }
     L.globalCompositeOperation = 'source-over';
-    quantizeDark(L, AW / 2, AH / 2, 6);
+    quantizeDark(L, GW, GH, 6);
   }
 
   inView(x, y, m = 0) { return x > this.camX - m && x < this.camX + AW + m && y > this.camY - m && y < this.camY + AH + m; }
@@ -1179,7 +1243,7 @@ export class Renderer {
     if (PH > AH) ty = clamp((me ? me.y + this.lookY : PH / 2) - AH / 2, 0, PH - AH);
     if (this.camSnap) { this.camX = tx; this.camY = ty; this.camSnap = false; }
     else { const k = Math.min(1, dt * 8); this.camX += (tx - this.camX) * k; this.camY += (ty - this.camY) * k; }
-    this.camX = Math.round(this.camX); this.camY = Math.round(this.camY);
+    this.camX = snapPx(this.camX); this.camY = snapPx(this.camY);
   }
 
   // -------------------------------------------------- rendu principal
@@ -1201,7 +1265,17 @@ export class Renderer {
     else if (this.doorK !== this.doorTarget) {
       const opening = this.doorTarget > this.doorK;
       this.doorK = opening ? Math.min(1, this.doorK + dt * 3) : Math.max(0, this.doorK - dt * 7);
-      if (this.doorK === 0 && !opening) { this.shake = Math.max(this.shake, 4); this.onDoorSlam?.(); }
+      if (this.doorK === 0 && !opening) {
+        this.shake = Math.max(this.shake, 4); this.onDoorSlam?.();
+        // les portes claquent : nuage de poussière
+        for (const [tx, ty, dir, , , open] of snap.room.doors) {
+          if (!open) continue;
+          const d = DIRS[dir];
+          const x = (tx + 0.5 - d.dx * 0.6) * TILE, y = (ty + 0.5 - d.dy * 0.6) * TILE + 6;
+          this.burst(x, y, 14, '#b8b0a0', 110, 0.7, 4, { g: 60, up: -20 });
+          this.burst(x, y, 6, '#6a6270', 60, 0.9, 5, { up: -10 });
+        }
+      }
       if (this.doorK === 1 && opening) this.onDoorOpen?.();
     }
     this.texts = [];
@@ -1214,13 +1288,27 @@ export class Renderer {
     if (this.decalsDirty) {
       const D = this.dec.ctx;
       D.setTransform(1, 0, 0, 1, 0, 0); D.clearRect(0, 0, this.dec.width, this.dec.height);
+      D.setTransform(PX, 0, 0, PX, 0, 0);
       this.drawDecals(D);
+      D.setTransform(1, 0, 0, 1, 0, 0);
       pixelize(D, this.dec.width, this.dec.height, { outline: false, dither: false });
       this.decalsDirty = false;
     }
     this.drawDoors(E, snap, B, lights);
     this.drawTorches(E, B, lights);
     this.drawHazards(E, snap, lights);
+    this.drawPitAnim(X, snap, B, lights);
+    for (const h of this.hats) {
+      h.t += dt;
+      if (h.y < h.land || h.vy < 0) { h.x += h.vx * dt; h.y += h.vy * dt; h.vy += 620 * dt; h.rot += h.vr * dt; }
+      else { h.y = h.land; h.vr = 0; h.rot = h.rot * 0.8 + Math.round(h.rot / TAU) * TAU * 0.2; }
+      E.save(); E.translate(snapPx(h.x), snapPx(h.y)); E.rotate(h.rot); E.globalAlpha = Math.min(1, 4 - h.t);
+      E.fillStyle = h.col; E.beginPath(); E.ellipse(0, 4, 12, 3.5, 0, 0, TAU); E.fill();
+      E.beginPath(); E.moveTo(-7, 4); E.lineTo(7, 4); E.lineTo(3, -8); E.lineTo(-3, -14); E.lineTo(-2, -6); E.closePath(); E.fill();
+      E.fillStyle = h.trim; E.fillRect(-7, 1, 14, 3);
+      E.restore();
+    }
+    this.hats = this.hats.filter((h) => h.t < 4);
     this.drawTrapdoor(E, snap, B, lights);
     for (const l of this.lavaLights || []) if (this.inView(l.x, l.y, 70)) lights.push({ x: l.x, y: l.y, r: 70, c: '#ff6a1a', a: 0.7 });
     this.drawDestructibles(E, snap, B, lights);
@@ -1291,10 +1379,10 @@ export class Renderer {
         p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.g || 0) * dt;
         const fr = Math.pow(0.04, dt); p.vx *= fr; if (!p.g) p.vy *= fr;
         X.globalAlpha = a > 0.35 ? 1 : a * 2.5;
-        const sz = Math.max(2, Math.round(p.size / 2) * 2);
+        const sz = Math.max(1, Math.round(p.size * PX * 0.75)) / PX;
         X.fillStyle = p.color;
-        if (p.bubble) { X.strokeStyle = p.color; X.lineWidth = 2; X.strokeRect(p.x - sz, p.y - sz, sz * 2, sz * 2); }
-        else X.fillRect(Math.round(p.x / 2) * 2 - sz / 2, Math.round(p.y / 2) * 2 - sz / 2, sz, sz);
+        if (p.bubble) { X.strokeStyle = p.color; X.lineWidth = 1.5; X.strokeRect(snapPx(p.x - sz), snapPx(p.y - sz), sz * 2, sz * 2); }
+        else X.fillRect(snapPx(p.x - sz / 2), snapPx(p.y - sz / 2), sz, sz);
         if (p.glow) lights.push({ x: p.x, y: p.y, r: 16, c: p.color, a: 0.5 * a });
       }
     }
@@ -1325,23 +1413,26 @@ export class Renderer {
     }
     this.dnums = this.dnums.filter((d) => d.life > 0);
 
-    pixelize(E, AW, AH, { outline: true, solid: 0.45, dither: false });
-    pixelize(X, AW / 2, AH / 2, { outline: false, solid: 0.6, dither: false });
+    pixelize(E, GW, GH, { outline: true, solid: 0.45, dither: false });
+    pixelize(X, GW, GH, { outline: false, solid: 0.6, dither: false });
     this.applyLighting(B, lights, snap);
 
     // -------- composition du monde
     const W = this.world.ctx;
     this.shake = Math.max(0, this.shake - dt * 40);
     const sk = this.shakeOn ? this.shake : this.shake * 0.25;
-    const shx = Math.round((Math.random() - 0.5) * sk * R), shy = Math.round((Math.random() - 0.5) * sk * R);
+    const shx = Math.round((Math.random() - 0.5) * sk * PX), shy = Math.round((Math.random() - 0.5) * sk * PX);
+    const gx = Math.round(cx * PX), gy = Math.round(cy * PX);
     W.setTransform(1, 0, 0, 1, 0, 0);
     W.imageSmoothingEnabled = false;
     W.fillStyle = '#000'; W.fillRect(0, 0, AW, AH);
-    W.drawImage(this.bg, cx, cy, AW, AH, shx, shy, AW, AH);
-    W.drawImage(this.dec, cx, cy, AW, AH, shx, shy, AW, AH);
+    W.drawImage(this.bg, gx, gy, GW, GH, shx, shy, GW, GH);
+    W.drawImage(this.dec, gx, gy, GW, GH, shx, shy, GW, GH);
     W.drawImage(this.ent, shx, shy);
-    W.drawImage(this.fx, shx, shy, AW, AH);
-    W.drawImage(this.light, 0, 0, AW, AH);
+    W.drawImage(this.fx, shx, shy);
+    W.drawImage(this.light, 0, 0);
+    // la suite (brouillard, flashs, vignette) est dessinée en unités du monde
+    W.setTransform(PX, 0, 0, PX, 0, 0);
     // brouillard léger et doux (pas pixelisé pour ne pas gêner)
     if (this.fogs && this.fogs.length) {
       for (const a of this.fogs) {
@@ -1366,15 +1457,16 @@ export class Renderer {
     if (this.iris) {
       this.iris.t += dt;
       const k = ease(clamp01(this.iris.t / this.iris.dur));
-      const ix = (me ? me.x : AW / 2) - cx, iy = (me ? me.y - 10 : AH / 2) - cy;
-      const rad = k * 840;
+      const ix = ((me ? me.x : AW / 2) - cx) * PX, iy = ((me ? me.y - 10 : AH / 2) - cy) * PX;
+      const rad = k * 840 * PX;
+      W.setTransform(1, 0, 0, 1, 0, 0);
       W.fillStyle = '#000';
-      for (let y = 0; y < AH; y += 2) {
-        const dy = y + 1 - iy;
+      for (let y = 0; y < GH; y++) {
+        const dy = y + 0.5 - iy;
         const half = rad > Math.abs(dy) ? Math.sqrt(rad * rad - dy * dy) : 0;
-        const x0 = Math.round((ix - half) / 2) * 2, x1 = Math.round((ix + half) / 2) * 2;
-        if (half <= 0) W.fillRect(0, y, AW, 2);
-        else { W.fillRect(0, y, Math.max(0, x0), 2); W.fillRect(x1, y, AW - x1, 2); }
+        const x0 = Math.round(ix - half), x1 = Math.round(ix + half);
+        if (half <= 0) W.fillRect(0, y, GW, 1);
+        else { W.fillRect(0, y, Math.max(0, x0), 1); W.fillRect(x1, y, GW - x1, 1); }
       }
       if (this.iris.t >= this.iris.dur) this.iris = null;
     }
@@ -1395,8 +1487,8 @@ export class Renderer {
       if (this.trans.t >= this.trans.dur) this.trans = null;
     } else if (this.zoomK > 0.004 && me) {
       // petit zoom sur l'action (mort d'un boss, ta chute)
-      const z = 1 + this.zoomK, sw = AW / z, sh = AH / z;
-      const sx = clamp(me.x - cx - sw / 2, 0, AW - sw), sy = clamp(me.y - cy - 10 - sh / 2, 0, AH - sh);
+      const z = 1 + this.zoomK, sw = GW / z, sh = GH / z;
+      const sx = clamp((me.x - cx) * PX - sw / 2, 0, GW - sw), sy = clamp((me.y - cy - 10) * PX - sh / 2, 0, GH - sh);
       m.drawImage(this.world, sx, sy, sw, sh, 0, 0, SW, SH);
     } else m.drawImage(this.world, 0, 0, SW, SH);
 
@@ -1530,6 +1622,26 @@ export class Renderer {
     c.textBaseline = 'alphabetic';
   }
 
+  drawFlyers(ctx, dt) {
+    const P = this.hudPos;
+    for (const f of this.flyers) {
+      f.t += dt;
+      const k = ease(clamp01(f.t / 0.6));
+      const [tx, ty] = P[f.kind] || [20, 20];
+      // courbe : monte puis file vers le compteur
+      const cxp = f.sx + (tx - f.sx) * 0.2, cyp = Math.min(f.sy, ty) - 70;
+      const x = (1 - k) * (1 - k) * f.sx + 2 * (1 - k) * k * cxp + k * k * tx;
+      const y = (1 - k) * (1 - k) * f.sy + 2 * (1 - k) * k * cyp + k * k * ty;
+      if (f.kind === 'coin') this.pixCoin(ctx, Math.round(x - 5), Math.round(y - 5), 2);
+      else if (f.kind === 'heart') this.pixHeart(ctx, Math.round(x - 7), Math.round(y - 6), 2, 2, 'r');
+      else if (f.kind === 'bomb') { ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(0.55, 0.55); drawBombSprite(ctx, 0, 0, 0, 0); ctx.restore(); }
+      else { ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(0.6, 0.6); drawKeySprite(ctx, 0, 0); ctx.restore(); }
+      if (f.t >= 0.6 && !f.done) { f.done = true; f.flash = 0.25; }
+      if (f.flash > 0) { f.flash -= dt; ctx.strokeStyle = '#fff7c0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(tx, ty, 6 + (0.25 - f.flash) * 40, 0, TAU); ctx.stroke(); }
+    }
+    this.flyers = this.flyers.filter((f) => f.t < 0.85);
+  }
+
   drawHUD(ctx, snap, me, meId, dt, extra, B) {
     ctx.textBaseline = 'alphabetic';
     const k = this.keyNames || {};
@@ -1579,6 +1691,8 @@ export class Renderer {
       tx += 42;
       ctx.save(); ctx.translate(tx + 6, ty + 4); ctx.scale(0.6, 0.6); drawKeySprite(ctx, 0, 0); ctx.restore();
       ctx.fillStyle = '#ffe9b0'; ctx.fillText(String(me.keys).padStart(2, '0'), tx + 15, ty + 10);
+      this.hudPos = { coin: [hx + 6, ty + 5], bomb: [hx + 46, ty + 5], key: [tx + 6, ty + 4], heart: [hx + 8, hy + 6] };
+      this.drawFlyers(ctx, dt);
       tx += 42;
       if (me.rev) { ctx.fillStyle = '#ffb347'; ctx.font = `13px ${FONT}`; ctx.fillText('✦' + me.rev, tx, ty + 10); tx += 26; }
       if (me.aegis) { ctx.font = `14px ${FONT}`; ctx.fillStyle = '#7ad1ff'; ctx.fillText('◈' + me.aegis, tx, ty + 10); }
